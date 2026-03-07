@@ -4,11 +4,12 @@ from properties_screen import PropertyScreen
 from payment_vouchers import PaymentVoucherScreen
 from receipt_vouchers import ReceiptVoucherScreen
 from chart_of_accounts import ChartOfAccountsScreen
+from sub_coding_screen import SubCodingZayedComplete  # <--- إضافة هذا السطر
 
 class RealEstateApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("نظام الصوفي للمقاولات والعقارات - v2.0")
+        self.root.title("نظام محاسبي للمقاولات والعقارات - v2.0")
         self.root.geometry("1200x800")
 
         # --- لوحة الألوان الجديدة ---
@@ -49,6 +50,7 @@ class RealEstateApp:
         menu_items = [
             ("🏢  إدارة العقارات", self.open_properties),
             ("📁  دليل الحسابات", self.open_accounts),
+            ("🔗  الترميز الفرعي (الأراضي/الورثة)", self.open_sub_coding),
             ("📤  سند صرف نقدي", self.open_payment_voucher),
             ("📥  سند قبض نقدي", self.open_receipt_voucher),
             ("📝  قيد يومية يدوي", self.open_manual_journal),
@@ -96,7 +98,7 @@ class RealEstateApp:
         welcome_frame = tk.Frame(self.display_area, bg=self.bg_color)
         welcome_frame.place(relx=0.5, rely=0.5, anchor=tk.CENTER)
 
-        tk.Label(welcome_frame, text="مرحباً بك في نظام الصوفي",
+        tk.Label(welcome_frame, text="مرحباً بك",
                  font=("Segoe UI", 26, "bold"), bg=self.bg_color, fg=self.primary_color).pack()
         tk.Label(welcome_frame, text="الإدارة المالية العقارية أصبحت أسهل",
                  font=("Segoe UI", 14), bg=self.bg_color, fg="#7f8c8d").pack(pady=10)
@@ -131,6 +133,12 @@ class RealEstateApp:
         except Exception as e:
             messagebox.showerror("خطأ", f"فشل تحميل دليل الحسابات: {e}")
 
+    def open_sub_coding(self):
+        self.clear_display_area()
+        try:
+            self.current_page = SubCodingZayedComplete(self.display_area)
+        except Exception as e:
+            messagebox.showerror("خطأ", f"فشل تحميل شاشة الترميز: {e}")
     def open_manual_journal(self):
         messagebox.showinfo("القيود", "قيد البرمجة...")
 

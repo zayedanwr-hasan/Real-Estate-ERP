@@ -7,30 +7,29 @@ from db_connection import get_connection
 class ReceiptVoucherScreen:
     def __init__(self, master):
         self.master = master
-        # الهوية البصرية الموحدة للنظام
-        self.sidebar_color = "#34495e"  # لون السايد بار الكحلي
-        self.text_color = "#ecf0f1"  # لون النص الأبيض الكريمي
+        self.sidebar_color = "#34495e"
+        self.text_color = "#ecf0f1"
+
+        # --- الحساب الافتراضي للصندوق ---
+        self.DEFAULT_CASH_ACC = "1101 - الصندوق الرئيسي"
 
         self.frame = tk.Frame(master, bg="#f0f2f5")
         self.frame.pack(fill=tk.BOTH, expand=True)
 
-        # متغيرات الربط
         self.voucher_id_var = tk.StringVar(value="تلقائي")
         self.amount_var = tk.StringVar(value="0.00")
         self.amount_var.trace_add("write", self._update_total_display)
 
-        # الكارد الرئيسي الممتد
         self.main_card = tk.Frame(self.frame, bg="white", highlightthickness=1, highlightbackground="#d1d8e0")
         self.main_card.place(relx=0.5, rely=0.5, anchor=tk.CENTER, width=1100, height=800)
 
         self._build_header_buttons()
         self._build_form_content()
         self._load_initial_data()
-        self._set_fields_state('disabled')  # الحقول مغلقة افتراضياً حتى يضغط "جديد"
+        self._set_fields_state('disabled')
 
     def _build_header_buttons(self):
-        """شريط العمليات العلوي"""
-        header = tk.Frame(self.main_card, bg="#27ae60", height=65)  # أخضر لتمييز القبض عن الصرف
+        header = tk.Frame(self.main_card, bg="#27ae60", height=65)
         header.pack(fill="x", side="top")
 
         tk.Label(header, text="سند قبض نقدي (استلام) - Al-Sofi ERP", fg="white",
@@ -45,7 +44,7 @@ class ReceiptVoucherScreen:
             ("تعديل", "#f1c40f", self._update_voucher),
             ("حفظ", "#2ecc71", self._save_voucher),
             ("بحث", "#9b59b6", self._search_voucher),
-            ("جديد", "#3498db", self._reset_and_new)
+            ("جديد ✨", "#3498db", self._reset_and_new)
         ]
 
         for txt, clr, cmd in btn_data:
@@ -53,7 +52,6 @@ class ReceiptVoucherScreen:
                       width=9, bd=0, cursor="hand2", pady=7, command=cmd).pack(side="left", padx=5)
 
     def _create_full_width_field(self, parent, label_text, widget_type="entry", **kwargs):
-        """إنشاء حقل يملأ العرض مع تسمية بخلفية السايد بار"""
         container = tk.Frame(parent, bg="white")
         container.pack(fill="x", pady=12)
 
@@ -65,7 +63,6 @@ class ReceiptVoucherScreen:
             field = tk.Text(container, font=("Arial", 14, "bold"), bd=2, relief="groove", height=4, **kwargs)
 
         field.pack(side="left", fill="x", expand=True, padx=(0, 15))
-
         lbl = tk.Label(container, text=label_text, bg=self.sidebar_color, fg=self.text_color,
                        font=("Arial", 12, "bold"), width=22, anchor="center", pady=8)
         lbl.pack(side="right")
@@ -75,34 +72,34 @@ class ReceiptVoucherScreen:
         self.container = tk.Frame(self.main_card, bg="white")
         self.container.pack(fill="both", expand=True, padx=45, pady=30)
 
-        # الصف العلوي
         top_row = tk.Frame(self.container, bg="white")
         top_row.pack(fill="x", pady=5)
 
-        # التاريخ (يسار)
         date_frame = tk.Frame(top_row, bg="white")
         date_frame.pack(side="left", fill="x", expand=True)
         self.ent_date = self._create_full_width_field(date_frame, "تاريخ الاستلام :")
 
-        # رقم السند (يمين) - Readonly
         id_frame = tk.Frame(top_row, bg="white")
         id_frame.pack(side="right", fill="x", expand=True, padx=(20, 0))
         self.ent_id = self._create_full_width_field(id_frame, "رقم السند :", textvariable=self.voucher_id_var,
                                                     state="readonly")
-        self.ent_id.config(readonlybackground="#ecf0f1", fg="#27ae60")  # تمييز رقم السند باللون الأخضر
+        self.ent_id.config(readonlybackground="#ecf0f1", fg="#27ae60")
 
-        # الحقول الممتدة
-        self.combo_prop = self._create_full_width_field(self.container, "المشروع / العقار :", widget_type="combo")
-        self.combo_acc = self._create_full_width_field(self.container, "الحساب الدائن (العميل) :", widget_type="combo")
+        # المشروع والعقار
+        self.combo_project = self._create_full_width_field(self.container, "المشروع التابع :", widget_type="combo")
+        self.combo_project.bind("<<ComboboxSelected>>", self._filter_properties)
 
-        # المبلغ (خلفية خضراء باهتة للقبض)
+        self.combo_prop = self._create_full_width_field(self.container, "العقار / الوحدة :", widget_type="combo")
+
+        # الحساب الدائن (هنا سيظهر الصندوق افتراضياً عند الضغط على جديد)
+        self.combo_acc = self._create_full_width_field(self.container, "حساب القبض (الصندوق) :", widget_type="combo")
+
         self.ent_amount = self._create_full_width_field(self.container, "المبلغ المستلم :",
                                                         textvariable=self.amount_var)
         self.ent_amount.config(bg="#e8f5e9", fg="#1b5e20", font=("Arial", 24, "bold"))
 
         self.txt_desc = self._create_full_width_field(self.container, "البيان / العربون :", widget_type="text")
 
-        # الإجمالي السفلي
         self.total_box = tk.Frame(self.container, bg="#f8f9fa", pady=20, bd=1, relief="solid")
         self.total_box.pack(fill="x", pady=(30, 0))
         self.lbl_total_num = tk.Label(self.total_box, text="إجمالي القبض: 0.00 ر.ي", font=("Arial", 30, "bold"),
@@ -112,11 +109,20 @@ class ReceiptVoucherScreen:
                                        font=("Arial", 14, "bold"), bg="#f8f9fa", fg=self.sidebar_color)
         self.lbl_total_word.pack(pady=5)
 
-    # --- منطق الريد أونلي والتحكم بالبيانات ---
+    def _filter_properties(self, event=None):
+        project_selection = self.combo_project.get()
+        if not project_selection: return
+        project_id = project_selection.split(' - ')[0]
+        conn = get_connection()
+        if conn:
+            cur = conn.cursor()
+            cur.execute("SELECT id, property_name FROM finance.properties WHERE project_id = %s", (project_id,))
+            self.combo_prop['values'] = [f"{r[0]} - {r[1]}" for r in cur.fetchall()]
+            self.combo_prop.set('')
+            conn.close()
 
     def _set_fields_state(self, state):
-        """التحكم بفتح وإغلاق الحقول"""
-        widgets = [self.ent_date, self.combo_prop, self.combo_acc, self.ent_amount, self.txt_desc]
+        widgets = [self.ent_date, self.combo_project, self.combo_prop, self.combo_acc, self.ent_amount, self.txt_desc]
         for w in widgets:
             if isinstance(w, tk.Text):
                 w.config(state='normal' if state == 'normal' else 'disabled',
@@ -125,25 +131,37 @@ class ReceiptVoucherScreen:
                 w.config(state=state)
 
     def _reset_and_new(self):
-        """تفعيل السند الجديد وجلب الرقم التالي"""
+        """تفعيل السند ووضع الصندوق الافتراضي"""
         self._set_fields_state('normal')
         self.amount_var.set("0.00")
         self.txt_desc.delete("1.0", tk.END)
         self.ent_date.delete(0, tk.END)
         self.ent_date.insert(0, datetime.now().strftime("%Y-%m-%d"))
 
-        # جلب الرقم التالي من الـ Sequence الخاص بقاعدة البيانات
+        # --- الإضافة المطلوبة: تعيين الصندوق الافتراضي هنا ---
+        self.combo_acc.set(self.DEFAULT_CASH_ACC)
+
         conn = get_connection()
         if conn:
             cur = conn.cursor()
             cur.execute("SELECT COALESCE(MAX(id), 0) + 1 FROM finance.vouchers")
-            next_id = cur.fetchone()[0]
-            self.voucher_id_var.set(str(next_id))
+            self.voucher_id_var.set(str(cur.fetchone()[0]))
+            conn.close()
+
+    def _load_initial_data(self):
+        conn = get_connection()
+        if conn:
+            cur = conn.cursor()
+            cur.execute("SELECT id, project_name FROM finance.projects")
+            self.combo_project['values'] = [f"{r[0]} - {r[1]}" for r in cur.fetchall()]
+
+            cur.execute("SELECT account_code, account_name FROM finance.accounts WHERE account_type='تحليلي'")
+            self.combo_acc['values'] = [f"{r[0]} - {r[1]}" for r in cur.fetchall()]
             conn.close()
 
     def _save_voucher(self):
         if self.ent_amount['state'] == 'disabled':
-            messagebox.showwarning("تنبيه", "اضغط على زر 'جديد' لبدء إدخال سند")
+            messagebox.showwarning("تنبيه", "اضغط جديد أولاً")
             return
         self._execute_db_action("INSERT")
 
@@ -156,20 +174,17 @@ class ReceiptVoucherScreen:
             amt = float(self.amount_var.get())
             desc = self.txt_desc.get("1.0", tk.END).strip()
 
-            if mode == "INSERT":
-                cur.execute(
-                    "INSERT INTO finance.vouchers (v_type, v_date, description) VALUES ('قبض', %s, %s) RETURNING id",
-                    (self.ent_date.get(), desc))
-                new_id = cur.fetchone()[0]
-                # في القبض: الحساب المدين يكون الصندوق (افتراضياً) والحساب الدائن هو المختار هنا
-                cur.execute(
-                    "INSERT INTO finance.ledger (voucher_id, account_code, property_id, credit) VALUES (%s,%s,%s,%s)",
-                    (new_id, a_code, p_id, amt))
+            cur.execute(
+                "INSERT INTO finance.vouchers (v_type, v_date, description) VALUES ('قبض', %s, %s) RETURNING id",
+                (self.ent_date.get(), desc))
+            new_id = cur.fetchone()[0]
+            cur.execute(
+                "INSERT INTO finance.ledger (voucher_id, account_code, property_id, credit) VALUES (%s,%s,%s,%s)",
+                (new_id, a_code, p_id, amt))
 
             conn.commit()
-            messagebox.showinfo("نجاح", f"تم حفظ سند القبض بنجاح")
+            messagebox.showinfo("نجاح", "تم حفظ السند")
             self._set_fields_state('disabled')
-            self.voucher_id_var.set("تلقائي")
         except Exception as e:
             messagebox.showerror("خطأ", str(e))
         finally:
@@ -184,22 +199,11 @@ class ReceiptVoucherScreen:
         except:
             pass
 
-    def _load_initial_data(self):
-        conn = get_connection()
-        if conn:
-            cur = conn.cursor()
-            cur.execute("SELECT id, property_name FROM finance.properties")
-            self.combo_prop['values'] = [f"{r[0]} - {r[1]}" for r in cur.fetchall()]
-            cur.execute("SELECT account_code, account_name FROM finance.accounts WHERE account_type='تحليلي'")
-            self.combo_acc['values'] = [f"{r[0]} - {r[1]}" for r in cur.fetchall()]
-            conn.close()
-
     def _search_voucher(self):
-        # منطق البحث مشابه للصرف ولكن لـ v_type = 'قبض'
         pass
 
     def _update_voucher(self):
         self._set_fields_state('normal')
 
     def _print_voucher(self):
-        messagebox.showinfo("طباعة", "جاري تجهيز السند للطباعة...")
+        pass
