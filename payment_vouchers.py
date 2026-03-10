@@ -1,125 +1,127 @@
 import tkinter as tk
-from tkinter import ttk, messagebox
+from tkinter import messagebox, simpledialog
 from datetime import datetime
+from ttkbootstrap import ttk
 from db_connection import get_connection
 
 
 class PaymentVoucherScreen:
     def __init__(self, master):
         self.master = master
-        # الهوية البصرية الخاصة بك
+        self.primary_color = "#2c3e50"
         self.sidebar_color = "#34495e"
+        self.accent_color = "#1abc9c"
         self.text_color = "#ecf0f1"
+        self.separator_color = "#2c3e50"
+        self.bg_color = "#f4f7f6"
 
-        # --- الإضافة 1: تعريف حساب الصندوق الافتراضي ---
         self.DEFAULT_CASH_ACC = "1101 - الصندوق الرئيسي"
 
-        self.frame = tk.Frame(master, bg="#f0f2f5")
+        self._setup_styles()
+
+        self.frame = ttk.Frame(master, style="Voucher.Root.TFrame")
         self.frame.pack(fill=tk.BOTH, expand=True)
 
-        # متغيرات الربط
         self.voucher_id_var = tk.StringVar(value="تلقائي")
         self.amount_var = tk.StringVar(value="0.00")
         self.amount_var.trace_add("write", self._update_total_display)
 
-        # الكارد الرئيسي الممتد (1100x800) كما في تصميمك
-        self.main_card = tk.Frame(self.frame, bg="white", highlightthickness=1, highlightbackground="#d1d8e0")
-        self.main_card.place(relx=0.5, rely=0.5, anchor=tk.CENTER, width=1100, height=800)
+        self.main_card = ttk.Frame(self.frame, style="Voucher.Card.TFrame")
+        self.main_card.place(relx=0.5, rely=0.5, anchor=tk.CENTER, width=1120, height=800)
 
         self._build_header_buttons()
         self._build_form_content()
         self._load_initial_data()
-
-        # تفعيل حالة Read-Only عند التشغيل
         self._set_fields_state('disabled')
 
+    def _setup_styles(self):
+        style = ttk.Style()
+        style.configure("Voucher.Root.TFrame", background=self.bg_color)
+        style.configure("Voucher.Card.TFrame", background="white", bordercolor="#d1d8e0", borderwidth=1, relief="solid")
+        style.configure("Voucher.Header.TFrame", background=self.primary_color)
+        style.configure("Voucher.Header.TLabel", background=self.primary_color, foreground="white", font=("Segoe UI", 20, "bold"))
+        style.configure("Voucher.Content.TFrame", background="white")
+        style.configure("Voucher.FieldLabel.TLabel", background=self.sidebar_color, foreground=self.text_color, font=("Segoe UI", 13, "bold"), anchor="center", padding=9)
+        style.configure("Voucher.Field.TEntry", font=("Segoe UI", 15, "bold"))
+        style.configure("Voucher.Total.TFrame", background="#f8f9fa", bordercolor="#d8e1e8", borderwidth=1, relief="solid")
+        style.configure("Voucher.TotalAmount.TLabel", background="#f8f9fa", foreground="#c0392b", font=("Segoe UI", 30, "bold"))
+        style.configure("Voucher.TotalWords.TLabel", background="#f8f9fa", foreground=self.sidebar_color, font=("Segoe UI", 14, "bold"))
+
     def _build_header_buttons(self):
-        """شريط العمليات العلوي للسند"""
-        header = tk.Frame(self.main_card, bg="#2c3e50", height=65)
+        header = ttk.Frame(self.main_card, style="Voucher.Header.TFrame", height=68)
         header.pack(fill="x", side="top")
 
-        tk.Label(header, text="سند صرف نقدي - Al-Sofi ERP", fg="white",
-                 bg="#2c3e50", font=("Arial", 18, "bold")).pack(side="right", padx=30, pady=15)
+        ttk.Label(header, text="سند صرف نقدي - Al-Sofi ERP", style="Voucher.Header.TLabel").pack(side="right", padx=30, pady=15)
 
-        btn_group = tk.Frame(header, bg="#2c3e50")
+        btn_group = ttk.Frame(header, style="Voucher.Header.TFrame")
         btn_group.pack(side="left", padx=20)
 
         btn_data = [
-            ("خروج", "#e74c3c", self.master.quit),
-            ("حذف", "#e67e22", self._delete_voucher),
-            ("تعديل", "#f1c40f", self._update_voucher),
-            ("حفظ", "#2ecc71", self._save_voucher),
-            ("بحث", "#9b59b6", self._search_voucher),
-            ("جديد ✨", "#3498db", self._reset_and_new)
+            ("جديد", "primary", self._reset_and_new),
+            ("حفظ", "success", self._save_voucher),
+            ("تعديل", "warning", self._update_voucher),
+            ("حذف", "danger", self._delete_voucher),
+            ("بحث", "secondary", self._search_voucher),
+            ("خروج", "dark", self.master.quit),
         ]
 
-        for txt, clr, cmd in btn_data:
-            tk.Button(btn_group, text=txt, bg=clr, fg="white", font=("Arial", 10, "bold"),
-                      width=9, bd=0, cursor="hand2", pady=7, command=cmd).pack(side="left", padx=5)
+        for txt, bootstyle, cmd in btn_data:
+            ttk.Button(btn_group, text=txt, bootstyle=bootstyle, width=9, command=cmd).pack(side="left", padx=5)
 
     def _create_full_width_field(self, parent, label_text, widget_type="entry", **kwargs):
-        container = tk.Frame(parent, bg="white")
-        container.pack(fill="x", pady=12)
+        container = ttk.Frame(parent, style="Voucher.Content.TFrame")
+        container.pack(fill="x", pady=10)
 
+        field = None
         if widget_type == "entry":
-            field = tk.Entry(container, font=("Arial", 15, "bold"), bd=2, relief="groove", justify="right", **kwargs)
+            field = ttk.Entry(container, style="Voucher.Field.TEntry", justify="right", **kwargs)
         elif widget_type == "combo":
-            field = ttk.Combobox(container, font=("Arial", 15, "bold"), justify="right", **kwargs)
+            field = ttk.Combobox(container, font=("Segoe UI", 14, "bold"), justify="right", **kwargs)
         elif widget_type == "text":
-            field = tk.Text(container, font=("Arial", 14, "bold"), bd=2, relief="groove", height=4, **kwargs)
+            field = tk.Text(container, font=("Segoe UI", 13, "bold"), bd=1, relief="solid", height=4, **kwargs)
+
+        if field is None:
+            raise ValueError(f"Unsupported widget_type: {widget_type}")
 
         field.pack(side="left", fill="x", expand=True, padx=(0, 15))
 
-        lbl = tk.Label(container, text=label_text, bg=self.sidebar_color, fg=self.text_color,
-                       font=("Arial", 12, "bold"), width=22, anchor="center", pady=8)
+        lbl = ttk.Label(container, text=label_text, style="Voucher.FieldLabel.TLabel", width=22)
         lbl.pack(side="right")
         return field
 
     def _build_form_content(self):
-        self.container = tk.Frame(self.main_card, bg="white")
-        self.container.pack(fill="both", expand=True, padx=45, pady=30)
+        self.container = ttk.Frame(self.main_card, style="Voucher.Content.TFrame", padding=(40, 26))
+        self.container.pack(fill="both", expand=True)
 
-        top_row = tk.Frame(self.container, bg="white")
+        top_row = ttk.Frame(self.container, style="Voucher.Content.TFrame")
         top_row.pack(fill="x", pady=5)
 
-        # التاريخ
-        date_frame = tk.Frame(top_row, bg="white")
+        date_frame = ttk.Frame(top_row, style="Voucher.Content.TFrame")
         date_frame.pack(side="left", fill="x", expand=True)
         self.ent_date = self._create_full_width_field(date_frame, "تاريخ الصرف :")
 
-        # رقم السند
-        id_frame = tk.Frame(top_row, bg="white")
+        id_frame = ttk.Frame(top_row, style="Voucher.Content.TFrame")
         id_frame.pack(side="right", fill="x", expand=True, padx=(20, 0))
-        self.ent_id = self._create_full_width_field(id_frame, "رقم السند :", textvariable=self.voucher_id_var,
-                                                    state="readonly")
-        self.ent_id.config(readonlybackground="#ecf0f1", fg="#c0392b")
+        self.ent_id = self._create_full_width_field(id_frame, "رقم السند :", textvariable=self.voucher_id_var, state="readonly")
 
-        # --- الإضافة 2: فصل المشروع عن العقار ---
-        self.combo_project = self._create_full_width_field(self.container, "المشروع التابع :", widget_type="combo")
+        self.combo_project = self._create_full_width_field(self.container, "المشروع التابع :", widget_type="combo", state="readonly")
         self.combo_project.bind("<<ComboboxSelected>>", self._filter_properties)
 
-        self.combo_prop = self._create_full_width_field(self.container, "العقار / الوحدة :", widget_type="combo")
+        self.combo_prop = self._create_full_width_field(self.container, "العقار / الوحدة :", widget_type="combo", state="readonly")
+        self.combo_acc = self._create_full_width_field(self.container, "الحساب المحاسبي المدين :", widget_type="combo", state="readonly")
 
-        self.combo_acc = self._create_full_width_field(self.container, "الحساب المحاسبي المدين :", widget_type="combo")
-
-        # المبلغ
-        self.ent_amount = self._create_full_width_field(self.container, "المبلغ المستحق صرفه :",
-                                                        textvariable=self.amount_var)
-        self.ent_amount.config(bg="#fffde7", fg="#c0392b", font=("Arial", 24, "bold"))
+        self.ent_amount = self._create_full_width_field(self.container, "المبلغ المستحق صرفه :", textvariable=self.amount_var)
+        self.ent_amount.configure(font=("Segoe UI", 22, "bold"), foreground="#c0392b")
 
         self.txt_desc = self._create_full_width_field(self.container, "شرح البيان العام :", widget_type="text")
 
-        # منطقة الإجمالي السفلية
-        self.total_box = tk.Frame(self.container, bg="#f8f9fa", pady=20, bd=1, relief="solid")
-        self.total_box.pack(fill="x", pady=(30, 0))
-        self.lbl_total_num = tk.Label(self.total_box, text="الإجمالي: 0.00 ر.ي", font=("Arial", 30, "bold"),
-                                      bg="#f8f9fa", fg="#c0392b")
+        self.total_box = ttk.Frame(self.container, style="Voucher.Total.TFrame", padding=16)
+        self.total_box.pack(fill="x", pady=(24, 0))
+        self.lbl_total_num = ttk.Label(self.total_box, text="الإجمالي: 0.00 ر.ي", style="Voucher.TotalAmount.TLabel", anchor="center")
         self.lbl_total_num.pack()
-        self.lbl_total_word = tk.Label(self.total_box, text="فقط وقدره: لا شيء ريال يمني لا غير",
-                                       font=("Arial", 14, "bold"), bg="#f8f9fa", fg=self.sidebar_color)
+        self.lbl_total_word = ttk.Label(self.total_box, text="فقط وقدره: لا شيء ريال يمني لا غير", style="Voucher.TotalWords.TLabel", anchor="center")
         self.lbl_total_word.pack(pady=5)
 
-    # --- الإضافة 3: تصفية العقارات حسب المشروع المختار ---
     def _filter_properties(self, event=None):
         project_selection = self.combo_project.get()
         if not project_selection: return
@@ -136,8 +138,7 @@ class PaymentVoucherScreen:
         widgets = [self.ent_date, self.combo_project, self.combo_prop, self.combo_acc, self.ent_amount]
         for w in widgets:
             w.config(state=state)
-        self.txt_desc.config(state='normal' if state == 'normal' else 'disabled',
-                             bg="white" if state == 'normal' else "#f5f6f7")
+        self.txt_desc.config(state='normal' if state == 'normal' else 'disabled', bg="white" if state == 'normal' else "#f5f6f7")
 
     def _reset_and_new(self):
         """تصفير الحقول ووضع الصندوق الافتراضي"""
@@ -220,10 +221,116 @@ class PaymentVoucherScreen:
             pass
 
     def _search_voucher(self):
-        self._set_fields_state('normal')
+        voucher_id = simpledialog.askstring("بحث", "أدخل رقم سند الصرف:", parent=self.master)
+        if not voucher_id:
+            return
+
+        conn = get_connection()
+        try:
+            cur = conn.cursor()
+            cur.execute(
+                """
+                SELECT v.id,
+                       v.v_date,
+                       v.description,
+                       l.property_id,
+                       COALESCE(p.project_id, 0) AS project_id,
+                       l.account_code,
+                       COALESCE(l.debit, 0) AS amount
+                FROM finance.vouchers v
+                JOIN finance.ledger l ON l.voucher_id = v.id
+                LEFT JOIN finance.properties p ON p.id = l.property_id
+                WHERE v.id = %s
+                  AND v.v_type = 'صرف'
+                ORDER BY l.id
+                LIMIT 1
+                """,
+                (voucher_id,),
+            )
+            row = cur.fetchone()
+            if not row:
+                return messagebox.showinfo("بحث", "لم يتم العثور على السند")
+
+            self._set_fields_state('normal')
+            self.voucher_id_var.set(str(row[0]))
+            self.ent_date.delete(0, tk.END)
+            self.ent_date.insert(0, str(row[1]))
+            self.txt_desc.delete("1.0", tk.END)
+            self.txt_desc.insert("1.0", row[2] or "")
+            self.amount_var.set(str(row[6]))
+
+            if row[4]:
+                project_match = [v for v in self.combo_project['values'] if v.startswith(f"{row[4]} -")]
+                if project_match:
+                    self.combo_project.set(project_match[0])
+                    self._filter_properties()
+
+            if row[3]:
+                prop_match = [v for v in self.combo_prop['values'] if v.startswith(f"{row[3]} -")]
+                if prop_match:
+                    self.combo_prop.set(prop_match[0])
+
+            if row[5]:
+                acc_match = [v for v in self.combo_acc['values'] if v.startswith(f"{row[5]} -")]
+                if acc_match:
+                    self.combo_acc.set(acc_match[0])
+        except Exception as e:
+            messagebox.showerror("خطأ", str(e))
+        finally:
+            conn.close()
 
     def _update_voucher(self):
-        self._set_fields_state('normal')
+        voucher_id = self.voucher_id_var.get().strip()
+        if not voucher_id.isdigit():
+            return messagebox.showwarning("تنبيه", "ابحث عن سند صحيح قبل التعديل")
+
+        conn = get_connection()
+        try:
+            cur = conn.cursor()
+            p_id = int(self.combo_prop.get().split(' - ')[0])
+            a_code = self.combo_acc.get().split(' - ')[0]
+            amt = float(self.amount_var.get())
+            desc = self.txt_desc.get("1.0", tk.END).strip()
+
+            cur.execute("UPDATE finance.vouchers SET v_date=%s, description=%s WHERE id=%s AND v_type='صرف'", (self.ent_date.get(), desc, voucher_id))
+            cur.execute(
+                """
+                UPDATE finance.ledger
+                SET account_code=%s, property_id=%s, debit=%s, credit=NULL
+                WHERE voucher_id=%s AND vendor_id IS NULL
+                """,
+                (a_code, p_id, amt, voucher_id),
+            )
+            conn.commit()
+            messagebox.showinfo("نجاح", "تم تعديل سند الصرف")
+            self._set_fields_state('disabled')
+        except Exception as e:
+            conn.rollback()
+            messagebox.showerror("خطأ", str(e))
+
+        finally:
+            conn.close()
 
     def _delete_voucher(self):
-        pass
+        voucher_id = self.voucher_id_var.get().strip()
+        if not voucher_id.isdigit():
+            return messagebox.showwarning("تنبيه", "ابحث عن سند صحيح قبل الحذف")
+
+        if not messagebox.askyesno("تأكيد", "هل تريد حذف السند المحدد؟"):
+            return
+
+        conn = get_connection()
+        try:
+            cur = conn.cursor()
+            cur.execute("DELETE FROM finance.ledger WHERE voucher_id=%s", (voucher_id,))
+            cur.execute("DELETE FROM finance.vouchers WHERE id=%s AND v_type='صرف'", (voucher_id,))
+            conn.commit()
+            messagebox.showinfo("نجاح", "تم حذف سند الصرف")
+            self.voucher_id_var.set("تلقائي")
+            self._set_fields_state('disabled')
+            self._reset_and_new()
+        except Exception as e:
+            conn.rollback()
+            messagebox.showerror("خطأ", str(e))
+        finally:
+            conn.close()

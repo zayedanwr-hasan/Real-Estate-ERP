@@ -1,10 +1,12 @@
 import tkinter as tk
-from tkinter import messagebox
+from tkinter import messagebox, ttk
+import ttkbootstrap as tb
+from ttkbootstrap.constants import *
 from properties_screen import PropertyScreen
 from payment_vouchers import PaymentVoucherScreen
 from receipt_vouchers import ReceiptVoucherScreen
 from chart_of_accounts import ChartOfAccountsScreen
-from sub_coding_screen import SubCodingZayedComplete  # <--- إضافة هذا السطر
+from sub_coding_opening_balances import SubCodingOpeningBalances  # <--- إضافة هذا السطر
 
 class RealEstateApp:
     def __init__(self, root):
@@ -20,37 +22,80 @@ class RealEstateApp:
         self.separator_color = "#2c3e50"  # لون الخط الفاصل
         self.bg_color = "#f4f7f6"  # خلفية النظام العامة
 
+        self._setup_styles()
         self.root.configure(bg=self.bg_color)
 
         # 1. الترويسة العلوية
-        self.header = tk.Frame(self.root, bg=self.primary_color, height=70)
+        self.header = ttk.Frame(self.root, style="App.Header.TFrame", height=70)
         self.header.pack(fill="x", side="top")
 
-        tk.Label(self.header, text="نظام الإدارة العقارية والمحاسبية المتكامل",
-                 fg="white", bg=self.primary_color, font=("Segoe UI", 20, "bold")).pack(pady=15)
+        ttk.Label(
+            self.header,
+            text="نظام الإدارة العقارية والمحاسبية المتكامل",
+            style="App.Header.TLabel",
+            anchor="center",
+        ).pack(pady=15)
 
         # 2. السايد بار
-        self.sidebar = tk.Frame(self.root, bg=self.sidebar_color, width=260)
+        self.sidebar = ttk.Frame(self.root, style="App.Sidebar.TFrame", width=260)
         self.sidebar.pack(side="right", fill="y")
 
-        # عنوان السايد بار بلون رمادي فاتح لتمييزه عن الأزرار
-        tk.Label(self.sidebar, text="القائمة الرئيسية", fg="#bdc3c7",
-                 bg=self.sidebar_color, font=("Segoe UI", 10, "bold")).pack(pady=(30, 10))
+        ttk.Label(
+            self.sidebar,
+            text="القائمة الرئيسية",
+            style="App.SidebarTitle.TLabel",
+            anchor="center",
+        ).pack(pady=(30, 10))
 
         self.create_menu()
 
         # 3. منطقة العرض
-        self.display_area = tk.Frame(self.root, bg=self.bg_color)
+        self.display_area = ttk.Frame(self.root, style="App.Root.TFrame")
         self.display_area.pack(side="left", fill="both", expand=True)
 
         self.show_welcome_screen()
+
+    def _setup_styles(self):
+        style = ttk.Style()
+        style.configure("App.Root.TFrame", background=self.bg_color)
+        style.configure("App.Header.TFrame", background=self.primary_color)
+        style.configure("App.Sidebar.TFrame", background=self.sidebar_color)
+        style.configure(
+            "App.Header.TLabel",
+            background=self.primary_color,
+            foreground="white",
+            font=("Segoe UI", 20, "bold"),
+        )
+        style.configure(
+            "App.SidebarTitle.TLabel",
+            background=self.sidebar_color,
+            foreground="#bdc3c7",
+            font=("Segoe UI", 12, "bold"),
+        )
+        style.configure(
+            "App.Sidebar.TButton",
+            background=self.sidebar_color,
+            foreground=self.text_color,
+            borderwidth=0,
+            focusthickness=0,
+            font=("Segoe UI", 12, "bold"),
+            padding=(12, 10),
+            anchor="e",
+        )
+        style.map(
+            "App.Sidebar.TButton",
+            background=[("active", self.accent_color), ("pressed", self.accent_color)],
+            foreground=[("active", "white"), ("pressed", "white")],
+        )
+        style.configure("App.WelcomeTitle.TLabel", background=self.bg_color, foreground=self.primary_color, font=("Segoe UI", 26, "bold"))
+        style.configure("App.WelcomeSub.TLabel", background=self.bg_color, foreground="#7f8c8d", font=("Segoe UI", 14, "bold"))
 
     def create_menu(self):
         """إنشاء القائمة مع تنسيق الألوان الجديد والخطوط الفاصلة"""
         menu_items = [
             ("🏢  إدارة العقارات", self.open_properties),
             ("📁  دليل الحسابات", self.open_accounts),
-            ("🔗  الترميز الفرعي (الأراضي/الورثة)", self.open_sub_coding),
+            ("🔗  الترميز الفرعي (الأراضي/الورثة)", self.open_sub_coding),  # <--- إضافة هذا الخيار
             ("📤  سند صرف نقدي", self.open_payment_voucher),
             ("📥  سند قبض نقدي", self.open_receipt_voucher),
             ("📝  قيد يومية يدوي", self.open_manual_journal),
@@ -60,34 +105,20 @@ class RealEstateApp:
         ]
 
         for text, command in menu_items:
-            # حاوية الزر
-            btn_frame = tk.Frame(self.sidebar, bg=self.sidebar_color)
+            btn_frame = ttk.Frame(self.sidebar, style="App.Sidebar.TFrame")
             btn_frame.pack(fill="x", padx=10, pady=2)
 
-            btn = tk.Button(
+            btn = ttk.Button(
                 btn_frame,
                 text=text,
-                font=("Segoe UI", 11, "bold"),
-                bg=self.sidebar_color,
-                fg=self.text_color,  # اللون الكريمي المختار
-                bd=0,
-                padx=20,
-                pady=12,
-                anchor="e",
-                activebackground=self.accent_color,
-                activeforeground="white",
-                cursor="hand2",
+                style="App.Sidebar.TButton",
                 command=command,
+                cursor="hand2",
             )
             btn.pack(fill="x")
 
-            # إضافة الخط الفاصل (Separator)
-            line = tk.Frame(self.sidebar, bg=self.separator_color, height=1)
+            line = ttk.Separator(self.sidebar, orient="horizontal")
             line.pack(fill="x", padx=25, pady=2)
-
-            # تأثير الـ Hover المطور (تغيير لون النص أيضاً عند المرور)
-            btn.bind("<Enter>", lambda e, b=btn: b.config(bg=self.accent_color, fg="white"))
-            btn.bind("<Leave>", lambda e, b=btn: b.config(bg=self.sidebar_color, fg=self.text_color))
 
     def clear_display_area(self):
         for widget in self.display_area.winfo_children():
@@ -95,13 +126,15 @@ class RealEstateApp:
 
     def show_welcome_screen(self):
         self.clear_display_area()
-        welcome_frame = tk.Frame(self.display_area, bg=self.bg_color)
+        welcome_frame = ttk.Frame(self.display_area, style="App.Root.TFrame")
         welcome_frame.place(relx=0.5, rely=0.5, anchor=tk.CENTER)
 
-        tk.Label(welcome_frame, text="مرحباً بك",
-                 font=("Segoe UI", 26, "bold"), bg=self.bg_color, fg=self.primary_color).pack()
-        tk.Label(welcome_frame, text="الإدارة المالية العقارية أصبحت أسهل",
-                 font=("Segoe UI", 14), bg=self.bg_color, fg="#7f8c8d").pack(pady=10)
+        ttk.Label(welcome_frame, text="مرحباً بك", style="App.WelcomeTitle.TLabel").pack()
+        ttk.Label(
+            welcome_frame,
+            text="الإدارة المالية العقارية أصبحت أسهل",
+            style="App.WelcomeSub.TLabel",
+        ).pack(pady=10)
 
     # --- دالات الربط ---
     def open_properties(self):
@@ -136,9 +169,10 @@ class RealEstateApp:
     def open_sub_coding(self):
         self.clear_display_area()
         try:
-            self.current_page = SubCodingZayedComplete(self.display_area)
+            self.current_page = SubCodingOpeningBalances(self.display_area)
         except Exception as e:
             messagebox.showerror("خطأ", f"فشل تحميل شاشة الترميز: {e}")
+
     def open_manual_journal(self):
         messagebox.showinfo("القيود", "قيد البرمجة...")
 
@@ -150,12 +184,12 @@ class RealEstateApp:
 
 
 if __name__ == "__main__":
-    root = tk.Tk()
+    root = tb.Window(themename="flatly")
     try:
         from ctypes import windll
 
         windll.shcore.SetProcessDpiAwareness(1)
-    except:
+    except Exception:
         pass
     app = RealEstateApp(root)
     root.mainloop()

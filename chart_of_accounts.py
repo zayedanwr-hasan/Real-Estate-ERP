@@ -1,5 +1,6 @@
 import tkinter as tk
-from tkinter import ttk, messagebox
+from tkinter import messagebox
+from ttkbootstrap import ttk
 # تأكد من وجود ملف db_connection.py في نفس مسار المشروع
 from db_connection import get_connection
 
@@ -10,14 +11,16 @@ class ChartOfAccountsScreen:
         self.primary_color = "#2c3e50"
         self.sidebar_color = "#34495e"
         self.accent_color = "#1abc9c"
-        self.bg_color = "#f0f2f5"
+        self.text_color = "#ecf0f1"
+        self.separator_color = "#2c3e50"
+        self.bg_color = "#f4f7f6"
         self.account_rows = {}
 
-        self.frame = tk.Frame(master, bg=self.bg_color)
+        self.frame = ttk.Frame(master, style="ERP.Root.TFrame")
         self.frame.pack(fill=tk.BOTH, expand=True)
 
-        self.main_card = tk.Frame(self.frame, bg="white", highlightthickness=1, highlightbackground="#d1d8e0")
-        self.main_card.place(relx=0.5, rely=0.5, anchor=tk.CENTER, width=1100, height=800)
+        self.main_card = ttk.Frame(self.frame, style="ERP.Card.TFrame", padding=0)
+        self.main_card.place(relx=0.5, rely=0.5, anchor=tk.CENTER, width=1120, height=800)
 
         self._setup_tree_style()
         self._build_header_buttons()
@@ -26,43 +29,51 @@ class ChartOfAccountsScreen:
 
     def _setup_tree_style(self):
         style = ttk.Style()
-        style.theme_use('clam')
-        style.configure("Treeview", rowheight=35, font=("Segoe UI", 11), background="white", fieldbackground="white",
-                        indent=35)
-        style.configure("Treeview.Heading", font=("Segoe UI", 11, "bold"), background="#ecf0f1",
-                        foreground=self.primary_color)
-        style.map("Treeview", background=[('selected', self.accent_color)], foreground=[('selected', 'white')])
+        style.configure("ERP.Root.TFrame", background=self.bg_color)
+        style.configure("ERP.Card.TFrame", background="white", bordercolor="#d1d8e0", borderwidth=1, relief="solid")
+        style.configure("ERP.Header.TFrame", background=self.primary_color)
+        style.configure("ERP.HeaderTitle.TLabel", background=self.primary_color, foreground="white", font=("Segoe UI", 18, "bold"))
+        style.configure("ERP.Content.TFrame", background="white")
+        style.configure("ERP.Form.TLabelframe", background="white", bordercolor="#d8e1e8", borderwidth=1, relief="solid")
+        style.configure("ERP.Form.TLabelframe.Label", background="white", foreground=self.primary_color, font=("Segoe UI", 13, "bold"))
+        style.configure("ERP.Value.TLabel", background="white", foreground="#7f8c8d", font=("Segoe UI", 13, "bold"))
+        style.configure("ERP.Balance.TLabel", background="white", foreground="#c0392b", font=("Segoe UI", 24, "bold"))
+        style.configure("ERP.FieldLabel.TLabel", background=self.sidebar_color, foreground=self.text_color, font=("Segoe UI", 12, "bold"), anchor="center", padding=8)
+        style.configure("ERP.Field.TEntry", font=("Segoe UI", 14, "bold"))
+        style.configure("ERP.TreeTitle.TLabel", background="white", foreground=self.primary_color, font=("Segoe UI", 13, "bold"))
+
+        style.configure("Treeview", rowheight=30, font=("Segoe UI", 10), background="white", fieldbackground="white", foreground="#1f2d3d", indent=28)
+        style.configure("Treeview.Heading", font=("Segoe UI", 11, "bold"), background="#ecf0f1", foreground=self.primary_color)
+        style.map("Treeview", background=[("selected", self.accent_color)], foreground=[("selected", "white")])
 
     def _build_header_buttons(self):
-        header = tk.Frame(self.main_card, bg=self.primary_color, height=65)
+        header = ttk.Frame(self.main_card, style="ERP.Header.TFrame", height=68)
         header.pack(fill="x", side="top")
 
-        tk.Label(header, text="دليل الحسابات العقاري - Al-Sofi ERP", fg="white",
-                 bg=self.primary_color, font=("Segoe UI", 18, "bold")).pack(side="right", padx=30, pady=15)
+        ttk.Label(header, text="دليل الحسابات العقاري - Al-Sofi ERP", style="ERP.HeaderTitle.TLabel").pack(
+            side="right", padx=30, pady=15
+        )
 
-        btn_group = tk.Frame(header, bg=self.primary_color)
+        btn_group = ttk.Frame(header, style="ERP.Header.TFrame")
         btn_group.pack(side="left", padx=20)
 
         btn_data = [
-            ("خروج🚪", "#e74c3c", self._exit_app),
-            ("حذف🗑️", "#e67e22", self._delete_account),
-            ("تعديل✏️", "#f1c40f", self._edit_account),
-            ("حفظ💾", "#2ecc71", self._save_account),
-            ("بحث🔍", "#9b59b6", self._search_account),
-            ("جديد ✨", "#3498db", self._clear_form)
+            ("جديد", "primary", self._clear_form),
+            ("حفظ", "success", self._save_account),
+            ("تعديل", "warning", self._edit_account),
+            ("حذف", "danger", self._delete_account),
+            ("بحث", "secondary", self._search_account),
+            ("خروج", "dark", self._exit_app),
         ]
 
-        for txt, clr, cmd in btn_data:
-            tk.Button(btn_group, text=txt, bg=clr, fg="white", font=("Segoe UI", 10, "bold"),
-                      width=9, bd=0, cursor="hand2", pady=7, command=cmd).pack(side="left", padx=5)
+        for txt, bootstyle, cmd in btn_data:
+            ttk.Button(btn_group, text=txt, bootstyle=bootstyle, width=9, command=cmd).pack(side="left", padx=5)
 
     def _build_tree_and_form(self):
-        content = tk.Frame(self.main_card, bg="white")
-        content.pack(fill="both", expand=True, padx=30, pady=20)
+        content = ttk.Frame(self.main_card, style="ERP.Content.TFrame", padding=(24, 18))
+        content.pack(fill="both", expand=True)
 
-        self.form_container = tk.LabelFrame(content, text=" تفاصيل بطاقة الحساب ", bg="white",
-                                            font=("Segoe UI", 12, "bold"), fg=self.primary_color,
-                                            padx=20, pady=20, width=420)
+        self.form_container = ttk.Labelframe(content, text=" تفاصيل بطاقة الحساب ", style="ERP.Form.TLabelframe", padding=18, width=430)
         self.form_container.pack_propagate(False)
         self.form_container.pack(side="right", fill="y")
 
@@ -71,37 +82,60 @@ class ChartOfAccountsScreen:
         self.entries['account_name'] = self._create_styled_field(self.form_container, "اسم الحساب :")
         self.entries['parent_code'] = self._create_styled_field(self.form_container, "حساب الأب :")
 
-        self.combo_type = self._create_styled_field(self.form_container, "نوع الحساب :", widget_type="combo",
-                                                    values=["رئيسي", "فرعي", "تحليلي"], state="readonly")
-        self.combo_nature = self._create_styled_field(self.form_container, "طبيعة الحساب :", widget_type="combo",
-                                                      values=["مدين", "دائن"], state="readonly")
+        self.combo_type = self._create_styled_field(
+            self.form_container,
+            "نوع الحساب :",
+            widget_type="combo",
+            values=["رئيسي", "فرعي", "تحليلي"],
+            state="readonly",
+        )
+        self.combo_nature = self._create_styled_field(
+            self.form_container,
+            "طبيعة الحساب :",
+            widget_type="combo",
+            values=["مدين", "دائن"],
+            state="readonly",
+        )
 
-        tk.Frame(self.form_container, bg="#d1d8e0", height=1).pack(fill="x", pady=20)
-        tk.Label(self.form_container, text="الرصيد الحالي", font=("Segoe UI", 12), bg="white", fg="#7f8c8d").pack()
-        self.lbl_balance = tk.Label(self.form_container, text="0.00 ر.ي", font=("Segoe UI", 22, "bold"),
-                                    bg="white", fg="#c0392b")
+        ttk.Separator(self.form_container, orient="horizontal").pack(fill="x", pady=20)
+        ttk.Label(self.form_container, text="الرصيد الحالي", style="ERP.Value.TLabel").pack()
+        self.lbl_balance = ttk.Label(self.form_container, text="0.00 ر.ي", style="ERP.Balance.TLabel")
         self.lbl_balance.pack()
 
-        tree_frame = tk.Frame(content, bg="white")
+        tree_frame = ttk.Frame(content, style="ERP.Content.TFrame")
         tree_frame.pack(side="left", fill="both", expand=True, padx=(0, 15))
 
-        tk.Label(tree_frame, text="📁 الهيكل التنظيمي للحسابات", font=("Segoe UI", 12, "bold"), bg="white",
-                 fg=self.primary_color).pack(anchor="e", pady=(0, 5))
+        ttk.Label(tree_frame, text="الهيكل التنظيمي للحسابات", style="ERP.TreeTitle.TLabel", anchor="e").pack(anchor="e", pady=(0, 8))
 
-        self.tree = ttk.Treeview(tree_frame, columns=("code", "type", "nature", "level"), show="tree headings")
+        tree_container = ttk.Frame(tree_frame, style="ERP.Content.TFrame")
+        tree_container.pack(fill="both", expand=True)
+        tree_container.rowconfigure(0, weight=1)
+        tree_container.columnconfigure(0, weight=1)
+
+        self.tree = ttk.Treeview(tree_container, columns=("code", "type", "nature", "level"), show="tree headings")
         self.tree.heading("#0", text="اسم الحساب", anchor="e")
         self.tree.heading("code", text="الكود", anchor="center")
         self.tree.heading("type", text="النوع", anchor="center")
         self.tree.heading("nature", text="الطبيعة", anchor="center")
         self.tree.heading("level", text="المستوى", anchor="center")
 
-        self.tree.column("#0", width=250, anchor="e")
-        self.tree.column("code", width=80, anchor="center")
-        self.tree.column("type", width=80, anchor="center")
-        self.tree.column("nature", width=80, anchor="center")
-        self.tree.column("level", width=50, anchor="center")
+        self.tree.column("#0", width=280, anchor="e")
+        self.tree.column("code", width=95, anchor="center")
+        self.tree.column("type", width=95, anchor="center")
+        self.tree.column("nature", width=95, anchor="center")
+        self.tree.column("level", width=70, anchor="center")
 
-        self.tree.pack(fill="both", expand=True)
+        y_scroll = ttk.Scrollbar(tree_container, orient="vertical", command=self.tree.yview)
+        x_scroll = ttk.Scrollbar(tree_container, orient="horizontal", command=self.tree.xview)
+        self.tree.configure(yscrollcommand=y_scroll.set, xscrollcommand=x_scroll.set)
+
+        self.tree.grid(row=0, column=0, sticky="nsew")
+        y_scroll.grid(row=0, column=1, sticky="ns")
+        x_scroll.grid(row=1, column=0, sticky="ew")
+
+        self.tree.tag_configure("odd", background="#ffffff")
+        self.tree.tag_configure("even", background="#f0f3f5")
+
         self.tree.bind("<<TreeviewSelect>>", self._on_tree_select)
 
     def _load_accounts_from_db(self):
@@ -124,24 +158,30 @@ class ChartOfAccountsScreen:
                 }
 
             node_map = {}
+            row_idx = 0
             for acc in sorted(self.account_rows.values(), key=lambda x: x["account_code"]):
                 p_code = acc["parent_code"]
                 a_type = acc["account_type"]
 
                 if a_type == "رئيسي":
-                    icon, tag = "📁 ", "main_red"
+                    icon, type_tag = "📁 ", "main_red"
                 elif a_type == "فرعي":
-                    icon, tag = "📂 ", "sub_blue"
+                    icon, type_tag = "📂 ", "sub_blue"
                 else:
-                    icon, tag = "📄 ", "detail_black"
+                    icon, type_tag = "📄 ", "detail_black"
 
                 parent_node = p_code if p_code in node_map else ""
-
-                node_id = self.tree.insert(parent_node, "end", iid=acc["account_code"],
-                                           text=f"{icon}{acc['account_name']}",
-                                           values=(acc["account_code"], a_type, acc["nature"], acc["account_level"]),
-                                           tags=(tag,))
+                stripe_tag = "even" if row_idx % 2 == 0 else "odd"
+                node_id = self.tree.insert(
+                    parent_node,
+                    "end",
+                    iid=acc["account_code"],
+                    text=f"{icon}{acc['account_name']}",
+                    values=(acc["account_code"], a_type, acc["nature"], acc["account_level"]),
+                    tags=(stripe_tag, type_tag),
+                )
                 node_map[acc["account_code"]] = node_id
+                row_idx += 1
 
                 if a_type in ["رئيسي", "فرعي"]:
                     self.tree.item(node_id, open=True)
@@ -257,15 +297,14 @@ class ChartOfAccountsScreen:
         self.combo_nature.set(data["nature"])
 
     def _create_styled_field(self, parent, label_text, widget_type="entry", **kwargs):
-        container = tk.Frame(parent, bg="white")
-        container.pack(fill="x", pady=8)
+        container = ttk.Frame(parent, style="ERP.Content.TFrame")
+        container.pack(fill="x", pady=10)
         if widget_type == "entry":
-            field = tk.Entry(container, font=("Segoe UI", 14, "bold"), bd=2, relief="groove", justify="right", **kwargs)
+            field = ttk.Entry(container, style="ERP.Field.TEntry", justify="right", **kwargs)
         else:
             field = ttk.Combobox(container, font=("Segoe UI", 13, "bold"), justify="right", **kwargs)
         field.pack(side="left", fill="x", expand=True, padx=(0, 10))
-        tk.Label(container, text=label_text, bg=self.sidebar_color, fg="white", font=("Segoe UI", 11, "bold"), width=18,
-                 anchor="center", pady=6).pack(side="right")
+        ttk.Label(container, text=label_text, style="ERP.FieldLabel.TLabel", width=18).pack(side="right")
         return field
 
     def _normalize_form_data(self):
@@ -290,7 +329,8 @@ class ChartOfAccountsScreen:
             e.delete(0, tk.END)
         self.combo_type.set('')
         self.combo_nature.set('')
-        if reset_focus: self.entries['account_code'].focus_set()
+        if reset_focus:
+            self.entries['account_code'].focus_set()
 
     def _search_account(self):
         keyword = self.entries['account_name'].get().strip().lower()
@@ -313,8 +353,11 @@ class ChartOfAccountsScreen:
 
 
 if __name__ == "__main__":
-    root = tk.Tk()
+    import ttkbootstrap as tb
+
+    root = tb.Window(themename="flatly")
     root.title("Al-Sofi Real Estate ERP")
     root.geometry("1200x900")
     app = ChartOfAccountsScreen(root)
     root.mainloop()
+
