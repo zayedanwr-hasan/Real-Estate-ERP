@@ -1,7 +1,7 @@
 import tkinter as tk
 from tkinter import messagebox, simpledialog
 from datetime import datetime
-from ttkbootstrap import ttk
+import ttkbootstrap as ttk
 from db_connection import get_connection
 
 
@@ -19,15 +19,15 @@ class PaymentVoucherScreen:
 
         self._setup_styles()
 
-        self.frame = ttk.Frame(master, style="Voucher.Root.TFrame")
+        self.frame = ttk.Frame(master, style="App.Payment.Root.TFrame")
         self.frame.pack(fill=tk.BOTH, expand=True)
 
         self.voucher_id_var = tk.StringVar(value="تلقائي")
         self.amount_var = tk.StringVar(value="0.00")
         self.amount_var.trace_add("write", self._update_total_display)
 
-        self.main_card = ttk.Frame(self.frame, style="Voucher.Card.TFrame")
-        self.main_card.place(relx=0.5, rely=0.5, anchor=tk.CENTER, width=1120, height=800)
+        self.main_card = ttk.Frame(self.frame, style="App.Payment.Card.TFrame")
+        self.main_card.pack(fill="both", expand=True, padx=14, pady=14)
 
         self._build_header_buttons()
         self._build_form_content()
@@ -36,47 +36,70 @@ class PaymentVoucherScreen:
 
     def _setup_styles(self):
         style = ttk.Style()
-        style.configure("Voucher.Root.TFrame", background=self.bg_color)
-        style.configure("Voucher.Card.TFrame", background="white", bordercolor="#d1d8e0", borderwidth=1, relief="solid")
-        style.configure("Voucher.Header.TFrame", background=self.primary_color)
-        style.configure("Voucher.Header.TLabel", background=self.primary_color, foreground="white", font=("Segoe UI", 20, "bold"))
-        style.configure("Voucher.Content.TFrame", background="white")
-        style.configure("Voucher.FieldLabel.TLabel", background=self.sidebar_color, foreground=self.text_color, font=("Segoe UI", 13, "bold"), anchor="center", padding=9)
-        style.configure("Voucher.Field.TEntry", font=("Segoe UI", 15, "bold"))
-        style.configure("Voucher.Total.TFrame", background="#f8f9fa", bordercolor="#d8e1e8", borderwidth=1, relief="solid")
-        style.configure("Voucher.TotalAmount.TLabel", background="#f8f9fa", foreground="#c0392b", font=("Segoe UI", 30, "bold"))
-        style.configure("Voucher.TotalWords.TLabel", background="#f8f9fa", foreground=self.sidebar_color, font=("Segoe UI", 14, "bold"))
+        style.configure("App.Payment.Root.TFrame", background=self.bg_color)
+        style.configure("App.Payment.Card.TFrame", background="white", bordercolor="#d1d8e0", borderwidth=1, relief="solid")
+        style.configure("App.Payment.Header.TFrame", background=self.primary_color)
+        style.configure("App.Payment.Header.TLabel", background=self.primary_color, foreground="white", font=("Segoe UI", 20, "bold"))
+        style.configure("App.Payment.Content.TFrame", background="white")
+        style.configure("App.Payment.FieldLabel.TLabel", background=self.sidebar_color, foreground=self.text_color, font=("Segoe UI", 13, "bold"), anchor="center", padding=9)
+        style.configure("App.Payment.Field.TEntry", fieldbackground="white", foreground=self.primary_color, font=("Segoe UI", 15, "bold"))
+        style.configure("App.Payment.Field.TCombobox", fieldbackground="white", foreground=self.primary_color, font=("Segoe UI", 14, "bold"))
+        style.configure("App.Payment.Total.TFrame", background="#f8f9fa", bordercolor="#d8e1e8", borderwidth=1, relief="solid")
+        style.configure("App.Payment.TotalAmount.TLabel", background="#f8f9fa", foreground="#c0392b", font=("Segoe UI", 30, "bold"))
+        style.configure("App.Payment.TotalWords.TLabel", background="#f8f9fa", foreground=self.sidebar_color, font=("Segoe UI", 14, "bold"))
+
+        # Distinct action colors to match the original ERP toolbar look.
+        style.configure("App.Payment.Primary.TButton", background="#2980b9", foreground="white", borderwidth=0, font=("Segoe UI", 11, "bold"), padding=(10, 6))
+        style.configure("App.Payment.Success.TButton", background="#27ae60", foreground="white", borderwidth=0, font=("Segoe UI", 11, "bold"), padding=(10, 6))
+        style.configure("App.Payment.Warning.TButton", background="#f1c40f", foreground="#2c3e50", borderwidth=0, font=("Segoe UI", 11, "bold"), padding=(10, 6))
+        style.configure("App.Payment.Danger.TButton", background="#e74c3c", foreground="white", borderwidth=0, font=("Segoe UI", 11, "bold"), padding=(10, 6))
+        style.configure("App.Payment.Info.TButton", background="#8e44ad", foreground="white", borderwidth=0, font=("Segoe UI", 11, "bold"), padding=(10, 6))
+        style.configure("App.Payment.Exit.TButton", background="#e67e22", foreground="white", borderwidth=0, font=("Segoe UI", 11, "bold"), padding=(10, 6))
+
+        for btn_style in (
+            "App.Payment.Primary.TButton",
+            "App.Payment.Success.TButton",
+            "App.Payment.Warning.TButton",
+            "App.Payment.Danger.TButton",
+            "App.Payment.Info.TButton",
+            "App.Payment.Exit.TButton",
+        ):
+            style.map(
+                btn_style,
+                background=[("active", self.accent_color), ("pressed", self.accent_color)],
+                foreground=[("active", "white"), ("pressed", "white")],
+            )
 
     def _build_header_buttons(self):
-        header = ttk.Frame(self.main_card, style="Voucher.Header.TFrame", height=68)
+        header = ttk.Frame(self.main_card, style="App.Payment.Header.TFrame", height=68)
         header.pack(fill="x", side="top")
 
-        ttk.Label(header, text="سند صرف نقدي - Al-Sofi ERP", style="Voucher.Header.TLabel").pack(side="right", padx=30, pady=15)
+        ttk.Label(header, text="سند صرف نقدي - Al-Sofi ERP", style="App.Payment.Header.TLabel").pack(side="right", padx=30, pady=15)
 
-        btn_group = ttk.Frame(header, style="Voucher.Header.TFrame")
+        btn_group = ttk.Frame(header, style="App.Payment.Header.TFrame")
         btn_group.pack(side="left", padx=20)
 
         btn_data = [
-            ("جديد", "primary", self._reset_and_new),
-            ("حفظ", "success", self._save_voucher),
-            ("تعديل", "warning", self._update_voucher),
-            ("حذف", "danger", self._delete_voucher),
-            ("بحث", "secondary", self._search_voucher),
-            ("خروج", "dark", self.master.quit),
+            ("جديد", "App.Payment.Primary.TButton", self._reset_and_new),
+            ("حفظ", "App.Payment.Success.TButton", self._save_voucher),
+            ("تعديل", "App.Payment.Warning.TButton", self._update_voucher),
+            ("حذف", "App.Payment.Danger.TButton", self._delete_voucher),
+            ("بحث", "App.Payment.Info.TButton", self._search_voucher),
+            ("خروج", "App.Payment.Exit.TButton", self.master.quit),
         ]
 
-        for txt, bootstyle, cmd in btn_data:
-            ttk.Button(btn_group, text=txt, bootstyle=bootstyle, width=9, command=cmd).pack(side="left", padx=5)
+        for txt, style_name, cmd in btn_data:
+            ttk.Button(btn_group, text=txt, style=style_name, width=9, command=cmd).pack(side="left", padx=5)
 
     def _create_full_width_field(self, parent, label_text, widget_type="entry", **kwargs):
-        container = ttk.Frame(parent, style="Voucher.Content.TFrame")
+        container = ttk.Frame(parent, style="App.Payment.Content.TFrame")
         container.pack(fill="x", pady=10)
 
         field = None
         if widget_type == "entry":
-            field = ttk.Entry(container, style="Voucher.Field.TEntry", justify="right", **kwargs)
+            field = ttk.Entry(container, style="App.Payment.Field.TEntry", justify="right", **kwargs)
         elif widget_type == "combo":
-            field = ttk.Combobox(container, font=("Segoe UI", 14, "bold"), justify="right", **kwargs)
+            field = ttk.Combobox(container, style="App.Payment.Field.TCombobox", justify="right", **kwargs)
         elif widget_type == "text":
             field = tk.Text(container, font=("Segoe UI", 13, "bold"), bd=1, relief="solid", height=4, **kwargs)
 
@@ -85,22 +108,22 @@ class PaymentVoucherScreen:
 
         field.pack(side="left", fill="x", expand=True, padx=(0, 15))
 
-        lbl = ttk.Label(container, text=label_text, style="Voucher.FieldLabel.TLabel", width=22)
+        lbl = ttk.Label(container, text=label_text, style="App.Payment.FieldLabel.TLabel", width=22)
         lbl.pack(side="right")
         return field
 
     def _build_form_content(self):
-        self.container = ttk.Frame(self.main_card, style="Voucher.Content.TFrame", padding=(40, 26))
+        self.container = ttk.Frame(self.main_card, style="App.Payment.Content.TFrame", padding=(40, 26))
         self.container.pack(fill="both", expand=True)
 
-        top_row = ttk.Frame(self.container, style="Voucher.Content.TFrame")
+        top_row = ttk.Frame(self.container, style="App.Payment.Content.TFrame")
         top_row.pack(fill="x", pady=5)
 
-        date_frame = ttk.Frame(top_row, style="Voucher.Content.TFrame")
+        date_frame = ttk.Frame(top_row, style="App.Payment.Content.TFrame")
         date_frame.pack(side="left", fill="x", expand=True)
         self.ent_date = self._create_full_width_field(date_frame, "تاريخ الصرف :")
 
-        id_frame = ttk.Frame(top_row, style="Voucher.Content.TFrame")
+        id_frame = ttk.Frame(top_row, style="App.Payment.Content.TFrame")
         id_frame.pack(side="right", fill="x", expand=True, padx=(20, 0))
         self.ent_id = self._create_full_width_field(id_frame, "رقم السند :", textvariable=self.voucher_id_var, state="readonly")
 
@@ -115,11 +138,11 @@ class PaymentVoucherScreen:
 
         self.txt_desc = self._create_full_width_field(self.container, "شرح البيان العام :", widget_type="text")
 
-        self.total_box = ttk.Frame(self.container, style="Voucher.Total.TFrame", padding=16)
+        self.total_box = ttk.Frame(self.container, style="App.Payment.Total.TFrame", padding=16)
         self.total_box.pack(fill="x", pady=(24, 0))
-        self.lbl_total_num = ttk.Label(self.total_box, text="الإجمالي: 0.00 ر.ي", style="Voucher.TotalAmount.TLabel", anchor="center")
+        self.lbl_total_num = ttk.Label(self.total_box, text="الإجمالي: 0.00 ر.ي", style="App.Payment.TotalAmount.TLabel", anchor="center")
         self.lbl_total_num.pack()
-        self.lbl_total_word = ttk.Label(self.total_box, text="فقط وقدره: لا شيء ريال يمني لا غير", style="Voucher.TotalWords.TLabel", anchor="center")
+        self.lbl_total_word = ttk.Label(self.total_box, text="فقط وقدره: لا شيء ريال يمني لا غير", style="App.Payment.TotalWords.TLabel", anchor="center")
         self.lbl_total_word.pack(pady=5)
 
     def _filter_properties(self, event=None):

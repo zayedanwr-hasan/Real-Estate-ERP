@@ -1,6 +1,6 @@
 import tkinter as tk
 from tkinter import messagebox
-from ttkbootstrap import ttk
+import ttkbootstrap as ttk
 # تأكد من وجود ملف db_connection.py في نفس مسار المشروع
 from db_connection import get_connection
 
@@ -16,11 +16,11 @@ class ChartOfAccountsScreen:
         self.bg_color = "#f4f7f6"
         self.account_rows = {}
 
-        self.frame = ttk.Frame(master, style="ERP.Root.TFrame")
+        self.frame = ttk.Frame(master, style="App.Accounts.Root.TFrame")
         self.frame.pack(fill=tk.BOTH, expand=True)
 
-        self.main_card = ttk.Frame(self.frame, style="ERP.Card.TFrame", padding=0)
-        self.main_card.place(relx=0.5, rely=0.5, anchor=tk.CENTER, width=1120, height=800)
+        self.main_card = ttk.Frame(self.frame, style="App.Accounts.Card.TFrame", padding=0)
+        self.main_card.pack(fill="both", expand=True, padx=14, pady=14)
 
         self._setup_tree_style()
         self._build_header_buttons()
@@ -29,51 +29,86 @@ class ChartOfAccountsScreen:
 
     def _setup_tree_style(self):
         style = ttk.Style()
-        style.configure("ERP.Root.TFrame", background=self.bg_color)
-        style.configure("ERP.Card.TFrame", background="white", bordercolor="#d1d8e0", borderwidth=1, relief="solid")
-        style.configure("ERP.Header.TFrame", background=self.primary_color)
-        style.configure("ERP.HeaderTitle.TLabel", background=self.primary_color, foreground="white", font=("Segoe UI", 18, "bold"))
-        style.configure("ERP.Content.TFrame", background="white")
-        style.configure("ERP.Form.TLabelframe", background="white", bordercolor="#d8e1e8", borderwidth=1, relief="solid")
-        style.configure("ERP.Form.TLabelframe.Label", background="white", foreground=self.primary_color, font=("Segoe UI", 13, "bold"))
-        style.configure("ERP.Value.TLabel", background="white", foreground="#7f8c8d", font=("Segoe UI", 13, "bold"))
-        style.configure("ERP.Balance.TLabel", background="white", foreground="#c0392b", font=("Segoe UI", 24, "bold"))
-        style.configure("ERP.FieldLabel.TLabel", background=self.sidebar_color, foreground=self.text_color, font=("Segoe UI", 12, "bold"), anchor="center", padding=8)
-        style.configure("ERP.Field.TEntry", font=("Segoe UI", 14, "bold"))
-        style.configure("ERP.TreeTitle.TLabel", background="white", foreground=self.primary_color, font=("Segoe UI", 13, "bold"))
+        style.configure("App.Accounts.Root.TFrame", background=self.bg_color)
+        style.configure("App.Accounts.Card.TFrame", background="white", bordercolor="#d1d8e0", borderwidth=1, relief="solid")
+        style.configure("App.Accounts.Header.TFrame", background=self.primary_color)
+        style.configure("App.Accounts.HeaderTitle.TLabel", background=self.primary_color, foreground="white", font=("Segoe UI", 18, "bold"))
+        style.configure("App.Accounts.Content.TFrame", background="white")
+        style.configure("App.Accounts.Form.TLabelframe", background="white", bordercolor="#d8e1e8", borderwidth=1, relief="solid")
+        style.configure("App.Accounts.Form.TLabelframe.Label", background="white", foreground=self.primary_color, font=("Segoe UI", 13, "bold"))
+        style.configure("App.Accounts.Value.TLabel", background="white", foreground=self.sidebar_color, font=("Segoe UI", 13, "bold"))
+        style.configure("App.Accounts.Balance.TLabel", background="white", foreground="#c0392b", font=("Segoe UI", 24, "bold"))
+        style.configure("App.Accounts.FieldLabel.TLabel", background=self.sidebar_color, foreground=self.text_color, font=("Segoe UI", 12, "bold"), anchor="center", padding=8)
+        style.configure("App.Accounts.Field.TEntry", fieldbackground="white", foreground=self.primary_color, font=("Segoe UI", 14, "bold"))
+        style.configure("App.Accounts.Field.TCombobox", fieldbackground="white", foreground=self.primary_color, font=("Segoe UI", 13, "bold"))
+        style.configure("App.Accounts.TreeTitle.TLabel", background="white", foreground=self.primary_color, font=("Segoe UI", 13, "bold"))
+        style.configure("App.Accounts.Primary.TButton", background="#2980b9", foreground="white", borderwidth=0, font=("Segoe UI", 11, "bold"), padding=(10, 6))
+        style.configure("App.Accounts.Success.TButton", background="#27ae60", foreground="white", borderwidth=0, font=("Segoe UI", 11, "bold"), padding=(10, 6))
+        style.configure("App.Accounts.Warning.TButton", background="#f1c40f", foreground="#2c3e50", borderwidth=0, font=("Segoe UI", 11, "bold"), padding=(10, 6))
+        style.configure("App.Accounts.Danger.TButton", background="#e74c3c", foreground="white", borderwidth=0, font=("Segoe UI", 11, "bold"), padding=(10, 6))
+        style.configure("App.Accounts.Info.TButton", background="#8e44ad", foreground="white", borderwidth=0, font=("Segoe UI", 11, "bold"), padding=(10, 6))
+        style.configure("App.Accounts.Exit.TButton", background="#e67e22", foreground="white", borderwidth=0, font=("Segoe UI", 11, "bold"), padding=(10, 6))
 
-        style.configure("Treeview", rowheight=30, font=("Segoe UI", 10), background="white", fieldbackground="white", foreground="#1f2d3d", indent=28)
-        style.configure("Treeview.Heading", font=("Segoe UI", 11, "bold"), background="#ecf0f1", foreground=self.primary_color)
-        style.map("Treeview", background=[("selected", self.accent_color)], foreground=[("selected", "white")])
+        for btn_style in (
+            "App.Accounts.Primary.TButton",
+            "App.Accounts.Success.TButton",
+            "App.Accounts.Warning.TButton",
+            "App.Accounts.Danger.TButton",
+            "App.Accounts.Info.TButton",
+            "App.Accounts.Exit.TButton",
+        ):
+            style.map(
+                btn_style,
+                background=[("active", self.accent_color), ("pressed", self.accent_color)],
+                foreground=[("active", "white"), ("pressed", "white")],
+            )
+
+        style.configure("App.Accounts.Treeview", rowheight=30, font=("Segoe UI", 10), background="white", fieldbackground="white", foreground=self.primary_color, indent=28)
+        style.configure("App.Accounts.Treeview.Heading", font=("Segoe UI", 11, "bold"), background=self.primary_color, foreground="white")
+        style.map("App.Accounts.Treeview", background=[("selected", self.accent_color)], foreground=[("selected", "white")])
+        style.map("App.Accounts.Treeview.Heading", background=[("active", self.primary_color), ("pressed", self.primary_color)], foreground=[("active", "white"), ("pressed", "white")])
+        style.configure("App.Accounts.Horizontal.TSeparator", background=self.separator_color)
+        style.configure(
+            "App.Accounts.Vertical.TScrollbar",
+            background=self.sidebar_color,
+            troughcolor=self.bg_color,
+            arrowcolor=self.primary_color,
+        )
+        style.configure(
+            "App.Accounts.Horizontal.TScrollbar",
+            background=self.sidebar_color,
+            troughcolor=self.bg_color,
+            arrowcolor=self.primary_color,
+        )
 
     def _build_header_buttons(self):
-        header = ttk.Frame(self.main_card, style="ERP.Header.TFrame", height=68)
+        header = ttk.Frame(self.main_card, style="App.Accounts.Header.TFrame", height=68)
         header.pack(fill="x", side="top")
 
-        ttk.Label(header, text="دليل الحسابات العقاري - Al-Sofi ERP", style="ERP.HeaderTitle.TLabel").pack(
+        ttk.Label(header, text="دليل الحسابات العقاري - Al-Sofi ERP", style="App.Accounts.HeaderTitle.TLabel").pack(
             side="right", padx=30, pady=15
         )
 
-        btn_group = ttk.Frame(header, style="ERP.Header.TFrame")
+        btn_group = ttk.Frame(header, style="App.Accounts.Header.TFrame")
         btn_group.pack(side="left", padx=20)
 
         btn_data = [
-            ("جديد", "primary", self._clear_form),
-            ("حفظ", "success", self._save_account),
-            ("تعديل", "warning", self._edit_account),
-            ("حذف", "danger", self._delete_account),
-            ("بحث", "secondary", self._search_account),
-            ("خروج", "dark", self._exit_app),
+            ("جديد", "App.Accounts.Primary.TButton", self._clear_form),
+            ("حفظ", "App.Accounts.Success.TButton", self._save_account),
+            ("تعديل", "App.Accounts.Warning.TButton", self._edit_account),
+            ("حذف", "App.Accounts.Danger.TButton", self._delete_account),
+            ("بحث", "App.Accounts.Info.TButton", self._search_account),
+            ("خروج", "App.Accounts.Exit.TButton", self._exit_app),
         ]
 
-        for txt, bootstyle, cmd in btn_data:
-            ttk.Button(btn_group, text=txt, bootstyle=bootstyle, width=9, command=cmd).pack(side="left", padx=5)
+        for txt, style_name, cmd in btn_data:
+            ttk.Button(btn_group, text=txt, style=style_name, width=9, command=cmd).pack(side="left", padx=5)
 
     def _build_tree_and_form(self):
-        content = ttk.Frame(self.main_card, style="ERP.Content.TFrame", padding=(24, 18))
+        content = ttk.Frame(self.main_card, style="App.Accounts.Content.TFrame", padding=(24, 18))
         content.pack(fill="both", expand=True)
 
-        self.form_container = ttk.Labelframe(content, text=" تفاصيل بطاقة الحساب ", style="ERP.Form.TLabelframe", padding=18, width=430)
+        self.form_container = ttk.Labelframe(content, text=" تفاصيل بطاقة الحساب ", style="App.Accounts.Form.TLabelframe", padding=18, width=430)
         self.form_container.pack_propagate(False)
         self.form_container.pack(side="right", fill="y")
 
@@ -97,22 +132,22 @@ class ChartOfAccountsScreen:
             state="readonly",
         )
 
-        ttk.Separator(self.form_container, orient="horizontal").pack(fill="x", pady=20)
-        ttk.Label(self.form_container, text="الرصيد الحالي", style="ERP.Value.TLabel").pack()
-        self.lbl_balance = ttk.Label(self.form_container, text="0.00 ر.ي", style="ERP.Balance.TLabel")
+        ttk.Separator(self.form_container, orient="horizontal", style="App.Accounts.Horizontal.TSeparator").pack(fill="x", pady=20)
+        ttk.Label(self.form_container, text="الرصيد الحالي", style="App.Accounts.Value.TLabel").pack()
+        self.lbl_balance = ttk.Label(self.form_container, text="0.00 ر.ي", style="App.Accounts.Balance.TLabel")
         self.lbl_balance.pack()
 
-        tree_frame = ttk.Frame(content, style="ERP.Content.TFrame")
+        tree_frame = ttk.Frame(content, style="App.Accounts.Content.TFrame")
         tree_frame.pack(side="left", fill="both", expand=True, padx=(0, 15))
 
-        ttk.Label(tree_frame, text="الهيكل التنظيمي للحسابات", style="ERP.TreeTitle.TLabel", anchor="e").pack(anchor="e", pady=(0, 8))
+        ttk.Label(tree_frame, text="الهيكل التنظيمي للحسابات", style="App.Accounts.TreeTitle.TLabel", anchor="e").pack(anchor="e", pady=(0, 8))
 
-        tree_container = ttk.Frame(tree_frame, style="ERP.Content.TFrame")
+        tree_container = ttk.Frame(tree_frame, style="App.Accounts.Content.TFrame")
         tree_container.pack(fill="both", expand=True)
         tree_container.rowconfigure(0, weight=1)
         tree_container.columnconfigure(0, weight=1)
 
-        self.tree = ttk.Treeview(tree_container, columns=("code", "type", "nature", "level"), show="tree headings")
+        self.tree = ttk.Treeview(tree_container, columns=("code", "type", "nature", "level"), show="tree headings", style="App.Accounts.Treeview")
         self.tree.heading("#0", text="اسم الحساب", anchor="e")
         self.tree.heading("code", text="الكود", anchor="center")
         self.tree.heading("type", text="النوع", anchor="center")
@@ -125,8 +160,8 @@ class ChartOfAccountsScreen:
         self.tree.column("nature", width=95, anchor="center")
         self.tree.column("level", width=70, anchor="center")
 
-        y_scroll = ttk.Scrollbar(tree_container, orient="vertical", command=self.tree.yview)
-        x_scroll = ttk.Scrollbar(tree_container, orient="horizontal", command=self.tree.xview)
+        y_scroll = ttk.Scrollbar(tree_container, orient="vertical", style="App.Accounts.Vertical.TScrollbar", command=self.tree.yview)
+        x_scroll = ttk.Scrollbar(tree_container, orient="horizontal", style="App.Accounts.Horizontal.TScrollbar", command=self.tree.xview)
         self.tree.configure(yscrollcommand=y_scroll.set, xscrollcommand=x_scroll.set)
 
         self.tree.grid(row=0, column=0, sticky="nsew")
@@ -297,14 +332,14 @@ class ChartOfAccountsScreen:
         self.combo_nature.set(data["nature"])
 
     def _create_styled_field(self, parent, label_text, widget_type="entry", **kwargs):
-        container = ttk.Frame(parent, style="ERP.Content.TFrame")
+        container = ttk.Frame(parent, style="App.Accounts.Content.TFrame")
         container.pack(fill="x", pady=10)
         if widget_type == "entry":
-            field = ttk.Entry(container, style="ERP.Field.TEntry", justify="right", **kwargs)
+            field = ttk.Entry(container, style="App.Accounts.Field.TEntry", justify="right", **kwargs)
         else:
-            field = ttk.Combobox(container, font=("Segoe UI", 13, "bold"), justify="right", **kwargs)
+            field = ttk.Combobox(container, style="App.Accounts.Field.TCombobox", justify="right", **kwargs)
         field.pack(side="left", fill="x", expand=True, padx=(0, 10))
-        ttk.Label(container, text=label_text, style="ERP.FieldLabel.TLabel", width=18).pack(side="right")
+        ttk.Label(container, text=label_text, style="App.Accounts.FieldLabel.TLabel", width=18).pack(side="right")
         return field
 
     def _normalize_form_data(self):

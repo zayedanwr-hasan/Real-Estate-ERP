@@ -1,6 +1,6 @@
 import tkinter as tk
-from tkinter import messagebox
-from ttkbootstrap import ttk
+from tkinter import messagebox, ttk
+import ttkbootstrap as tb
 from db_connection import get_connection
 
 
@@ -16,39 +16,39 @@ class PropertyScreen:
 
         self._setup_styles()
 
-        self.frame = ttk.Frame(master, style="Property.Root.TFrame", padding=12)
+        self.frame = tb.Frame(master, style="App.Property.Root.TFrame", padding=12)
         self.frame.pack(fill=tk.BOTH, expand=True)
 
-        self.main_card = ttk.Frame(self.frame, style="Property.Card.TFrame", padding=14)
+        self.main_card = tb.Frame(self.frame, style="App.Property.Card.TFrame", padding=14)
         self.main_card.pack(fill="both", expand=True)
 
         self.arabic_font = ("Segoe UI", 13, "bold")
 
-        self.form_row = ttk.Frame(self.main_card, style="Property.Card.TFrame")
+        self.form_row = tb.Frame(self.main_card, style="App.Property.Card.TFrame")
         self.form_row.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 10))
         self.form_row.columnconfigure(0, weight=1)
         self.form_row.columnconfigure(2, weight=1)
 
-        self.label_name = ttk.Label(self.form_row, text="اسم العقار", style="Property.FieldLabel.TLabel", anchor="e")
+        self.label_name = tb.Label(self.form_row, text="اسم العقار", style="App.Property.FieldLabel.TLabel", anchor="e")
         self.label_name.grid(row=0, column=1, sticky="e", padx=8, pady=8)
-        self.entry_name = ttk.Entry(self.form_row, font=self.arabic_font, justify='right')
+        self.entry_name = tb.Entry(self.form_row, font=self.arabic_font, justify='right', style="App.Property.Field.TEntry")
         self.entry_name.grid(row=0, column=0, padx=8, pady=8, sticky="ew")
 
-        self.label_price = ttk.Label(self.form_row, text="سعر الشراء", style="Property.FieldLabel.TLabel", anchor="e")
+        self.label_price = tb.Label(self.form_row, text="سعر الشراء", style="App.Property.FieldLabel.TLabel", anchor="e")
         self.label_price.grid(row=0, column=3, sticky="e", padx=8, pady=8)
-        self.entry_price = ttk.Entry(self.form_row, font=self.arabic_font, justify='right')
+        self.entry_price = tb.Entry(self.form_row, font=self.arabic_font, justify='right', style="App.Property.Field.TEntry")
         self.entry_price.grid(row=0, column=2, padx=8, pady=8, sticky="ew")
 
-        self.save_button = ttk.Button(self.main_card, text="حفظ", bootstyle="success", command=self.save_property)
+        self.save_button = tb.Button(self.main_card, text="حفظ", style="App.Property.Action.TButton", command=self.save_property)
         self.save_button.grid(row=1, column=0, columnspan=2, pady=(0, 12), sticky="e")
 
         columns = ("id", "property_name", "purchase_price", "total_cost", "status")
-        table_wrap = ttk.Frame(self.main_card, style="Property.Card.TFrame")
+        table_wrap = tb.Frame(self.main_card, style="App.Property.Card.TFrame")
         table_wrap.grid(row=2, column=0, columnspan=2, sticky="nsew")
         table_wrap.rowconfigure(0, weight=1)
         table_wrap.columnconfigure(0, weight=1)
 
-        self.tree = ttk.Treeview(table_wrap, columns=columns, show="headings", height=12)
+        self.tree = ttk.Treeview(table_wrap, columns=columns, show="headings", height=12, style="App.Property.Treeview")
         self.tree.heading("id", text="ID", anchor="e")
         self.tree.heading("property_name", text="اسم العقار", anchor="e")
         self.tree.heading("purchase_price", text="سعر الشراء", anchor="e")
@@ -60,8 +60,8 @@ class PropertyScreen:
         self.tree.column("total_cost", anchor="e", width=160)
         self.tree.column("status", anchor="e", width=120)
 
-        y_scroll = ttk.Scrollbar(table_wrap, orient="vertical", command=self.tree.yview)
-        x_scroll = ttk.Scrollbar(table_wrap, orient="horizontal", command=self.tree.xview)
+        y_scroll = ttk.Scrollbar(table_wrap, orient="vertical", style="App.Property.Vertical.TScrollbar", command=self.tree.yview)
+        x_scroll = ttk.Scrollbar(table_wrap, orient="horizontal", style="App.Property.Horizontal.TScrollbar", command=self.tree.xview)
         self.tree.configure(yscrollcommand=y_scroll.set, xscrollcommand=x_scroll.set)
 
         self.tree.grid(row=0, column=0, sticky="nsew")
@@ -78,12 +78,52 @@ class PropertyScreen:
         self.refresh_data()
 
     def _setup_styles(self):
-        style = ttk.Style()
-        style.configure("Property.Root.TFrame", background=self.bg_color)
-        style.configure("Property.Card.TFrame", background="white", bordercolor="#d1d8e0", borderwidth=1, relief="solid")
-        style.configure("Property.FieldLabel.TLabel", background="white", foreground=self.primary_color, font=("Segoe UI", 13, "bold"))
-        style.configure("Treeview", rowheight=30, font=("Segoe UI", 10), background="white", fieldbackground="white")
-        style.configure("Treeview.Heading", font=("Segoe UI", 11, "bold"), background="#ecf0f1", foreground=self.primary_color)
+        style = tb.Style()
+        style.configure("App.Property.Root.TFrame", background=self.bg_color)
+        style.configure("App.Property.Card.TFrame", background="white", bordercolor="#d1d8e0", borderwidth=1, relief="solid")
+        style.configure("App.Property.FieldLabel.TLabel", background="white", foreground=self.primary_color, font=("Segoe UI", 13, "bold"))
+        style.configure("App.Property.Field.TEntry", fieldbackground="white", foreground=self.primary_color, font=("Segoe UI", 13, "bold"))
+        style.configure(
+            "App.Property.Action.TButton",
+            background="#27ae60",
+            foreground="white",
+            borderwidth=0,
+            font=("Segoe UI", 12, "bold"),
+            padding=(10, 6),
+        )
+        style.map(
+            "App.Property.Action.TButton",
+            background=[("active", self.accent_color), ("pressed", self.accent_color)],
+            foreground=[("active", "white"), ("pressed", "white")],
+        )
+        style.configure(
+            "App.Property.Treeview",
+            rowheight=30,
+            font=("Segoe UI", 10),
+            background="white",
+            fieldbackground="white",
+            foreground=self.primary_color,
+        )
+        style.configure(
+            "App.Property.Treeview.Heading",
+            font=("Segoe UI", 11, "bold"),
+            background=self.primary_color,
+            foreground="white",
+        )
+        style.map("App.Property.Treeview", background=[("selected", self.accent_color)], foreground=[("selected", "white")])
+        style.map("App.Property.Treeview.Heading", background=[("active", self.primary_color), ("pressed", self.primary_color)], foreground=[("active", "white"), ("pressed", "white")])
+        style.configure(
+            "App.Property.Vertical.TScrollbar",
+            background=self.sidebar_color,
+            troughcolor=self.bg_color,
+            arrowcolor=self.primary_color,
+        )
+        style.configure(
+            "App.Property.Horizontal.TScrollbar",
+            background=self.sidebar_color,
+            troughcolor=self.bg_color,
+            arrowcolor=self.primary_color,
+        )
 
     def save_property(self):
         name = self.entry_name.get().strip()

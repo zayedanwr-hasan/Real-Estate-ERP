@@ -1,7 +1,7 @@
 import tkinter as tk
 from tkinter import messagebox, simpledialog
 from datetime import datetime
-from ttkbootstrap import ttk
+import ttkbootstrap as ttk
 from db_connection import get_connection
 
 
@@ -19,15 +19,15 @@ class ReceiptVoucherScreen:
 
         self._setup_styles()
 
-        self.frame = ttk.Frame(master, style="Receipt.Root.TFrame")
+        self.frame = ttk.Frame(master, style="App.Receipt.Root.TFrame")
         self.frame.pack(fill=tk.BOTH, expand=True)
 
         self.voucher_id_var = tk.StringVar(value="تلقائي")
         self.amount_var = tk.StringVar(value="0.00")
         self.amount_var.trace_add("write", self._update_total_display)
 
-        self.main_card = ttk.Frame(self.frame, style="Receipt.Card.TFrame")
-        self.main_card.place(relx=0.5, rely=0.5, anchor=tk.CENTER, width=1120, height=800)
+        self.main_card = ttk.Frame(self.frame, style="App.Receipt.Card.TFrame")
+        self.main_card.pack(fill="both", expand=True, padx=14, pady=14)
 
         self._build_header_buttons()
         self._build_form_content()
@@ -36,67 +36,90 @@ class ReceiptVoucherScreen:
 
     def _setup_styles(self):
         style = ttk.Style()
-        style.configure("Receipt.Root.TFrame", background=self.bg_color)
-        style.configure("Receipt.Card.TFrame", background="white", bordercolor="#d1d8e0", borderwidth=1, relief="solid")
-        style.configure("Receipt.Header.TFrame", background=self.primary_color)
-        style.configure("Receipt.Header.TLabel", background=self.primary_color, foreground="white", font=("Segoe UI", 20, "bold"))
-        style.configure("Receipt.Content.TFrame", background="white")
-        style.configure("Receipt.FieldLabel.TLabel", background=self.sidebar_color, foreground=self.text_color, font=("Segoe UI", 13, "bold"), anchor="center", padding=9)
-        style.configure("Receipt.Field.TEntry", font=("Segoe UI", 15, "bold"))
-        style.configure("Receipt.Total.TFrame", background="#f8f9fa", bordercolor="#d8e1e8", borderwidth=1, relief="solid")
-        style.configure("Receipt.TotalAmount.TLabel", background="#f8f9fa", foreground="#1b5e20", font=("Segoe UI", 30, "bold"))
-        style.configure("Receipt.TotalWords.TLabel", background="#f8f9fa", foreground=self.sidebar_color, font=("Segoe UI", 14, "bold"))
+        style.configure("App.Receipt.Root.TFrame", background=self.bg_color)
+        style.configure("App.Receipt.Card.TFrame", background="white", bordercolor="#d1d8e0", borderwidth=1, relief="solid")
+        style.configure("App.Receipt.Header.TFrame", background=self.primary_color)
+        style.configure("App.Receipt.Header.TLabel", background=self.primary_color, foreground="white", font=("Segoe UI", 20, "bold"))
+        style.configure("App.Receipt.Content.TFrame", background="white")
+        style.configure("App.Receipt.FieldLabel.TLabel", background=self.sidebar_color, foreground=self.text_color, font=("Segoe UI", 13, "bold"), anchor="center", padding=9)
+        style.configure("App.Receipt.Field.TEntry", fieldbackground="white", foreground=self.primary_color, font=("Segoe UI", 15, "bold"))
+        style.configure("App.Receipt.Field.TCombobox", fieldbackground="white", foreground=self.primary_color, font=("Segoe UI", 14, "bold"))
+        style.configure("App.Receipt.Total.TFrame", background="#f8f9fa", bordercolor="#d8e1e8", borderwidth=1, relief="solid")
+        style.configure("App.Receipt.TotalAmount.TLabel", background="#f8f9fa", foreground="#1b5e20", font=("Segoe UI", 30, "bold"))
+        style.configure("App.Receipt.TotalWords.TLabel", background="#f8f9fa", foreground=self.sidebar_color, font=("Segoe UI", 14, "bold"))
+
+        # Distinct action colors to match the original ERP toolbar look.
+        style.configure("App.Receipt.Primary.TButton", background="#2980b9", foreground="white", borderwidth=0, font=("Segoe UI", 11, "bold"), padding=(10, 6))
+        style.configure("App.Receipt.Success.TButton", background="#27ae60", foreground="white", borderwidth=0, font=("Segoe UI", 11, "bold"), padding=(10, 6))
+        style.configure("App.Receipt.Warning.TButton", background="#f1c40f", foreground="#2c3e50", borderwidth=0, font=("Segoe UI", 11, "bold"), padding=(10, 6))
+        style.configure("App.Receipt.Danger.TButton", background="#e74c3c", foreground="white", borderwidth=0, font=("Segoe UI", 11, "bold"), padding=(10, 6))
+        style.configure("App.Receipt.Info.TButton", background="#8e44ad", foreground="white", borderwidth=0, font=("Segoe UI", 11, "bold"), padding=(10, 6))
+        style.configure("App.Receipt.Exit.TButton", background="#e67e22", foreground="white", borderwidth=0, font=("Segoe UI", 11, "bold"), padding=(10, 6))
+
+        for btn_style in (
+            "App.Receipt.Primary.TButton",
+            "App.Receipt.Success.TButton",
+            "App.Receipt.Warning.TButton",
+            "App.Receipt.Danger.TButton",
+            "App.Receipt.Info.TButton",
+            "App.Receipt.Exit.TButton",
+        ):
+            style.map(
+                btn_style,
+                background=[("active", self.accent_color), ("pressed", self.accent_color)],
+                foreground=[("active", "white"), ("pressed", "white")],
+            )
 
     def _build_header_buttons(self):
-        header = ttk.Frame(self.main_card, style="Receipt.Header.TFrame", height=68)
+        header = ttk.Frame(self.main_card, style="App.Receipt.Header.TFrame", height=68)
         header.pack(fill="x", side="top")
 
-        ttk.Label(header, text="سند قبض نقدي (استلام) - Al-Sofi ERP", style="Receipt.Header.TLabel").pack(side="right", padx=30, pady=15)
+        ttk.Label(header, text="سند قبض نقدي (استلام) - Al-Sofi ERP", style="App.Receipt.Header.TLabel").pack(side="right", padx=30, pady=15)
 
-        btn_group = ttk.Frame(header, style="Receipt.Header.TFrame")
+        btn_group = ttk.Frame(header, style="App.Receipt.Header.TFrame")
         btn_group.pack(side="left", padx=20)
 
         btn_data = [
-            ("جديد", "primary", self._reset_and_new),
-            ("حفظ", "success", self._save_voucher),
-            ("تعديل", "warning", self._update_voucher),
-            ("حذف", "danger", self._delete_voucher),
-            ("بحث", "secondary", self._search_voucher),
-            ("طباعة", "info", self._print_voucher),
-            ("خروج", "dark", self.master.quit),
+            ("جديد", "App.Receipt.Primary.TButton", self._reset_and_new),
+            ("حفظ", "App.Receipt.Success.TButton", self._save_voucher),
+            ("تعديل", "App.Receipt.Warning.TButton", self._update_voucher),
+            ("حذف", "App.Receipt.Danger.TButton", self._delete_voucher),
+            ("بحث", "App.Receipt.Info.TButton", self._search_voucher),
+            ("طباعة", "App.Receipt.Primary.TButton", self._print_voucher),
+            ("خروج", "App.Receipt.Exit.TButton", self.master.quit),
         ]
 
-        for txt, bootstyle, cmd in btn_data:
-            ttk.Button(btn_group, text=txt, bootstyle=bootstyle, width=9, command=cmd).pack(side="left", padx=4)
+        for txt, style_name, cmd in btn_data:
+            ttk.Button(btn_group, text=txt, style=style_name, width=9, command=cmd).pack(side="left", padx=4)
 
     def _create_full_width_field(self, parent, label_text, widget_type="entry", **kwargs):
-        container = ttk.Frame(parent, style="Receipt.Content.TFrame")
+        container = ttk.Frame(parent, style="App.Receipt.Content.TFrame")
         container.pack(fill="x", pady=10)
 
         if widget_type == "entry":
-            field = ttk.Entry(container, style="Receipt.Field.TEntry", justify="right", **kwargs)
+            field = ttk.Entry(container, style="App.Receipt.Field.TEntry", justify="right", **kwargs)
         elif widget_type == "combo":
-            field = ttk.Combobox(container, font=("Segoe UI", 14, "bold"), justify="right", **kwargs)
+            field = ttk.Combobox(container, style="App.Receipt.Field.TCombobox", justify="right", **kwargs)
         elif widget_type == "text":
             field = tk.Text(container, font=("Segoe UI", 13, "bold"), bd=1, relief="solid", height=4, **kwargs)
 
         field.pack(side="left", fill="x", expand=True, padx=(0, 15))
-        lbl = ttk.Label(container, text=label_text, style="Receipt.FieldLabel.TLabel", width=22)
+        lbl = ttk.Label(container, text=label_text, style="App.Receipt.FieldLabel.TLabel", width=22)
         lbl.pack(side="right")
         return field
 
     def _build_form_content(self):
-        self.container = ttk.Frame(self.main_card, style="Receipt.Content.TFrame", padding=(40, 26))
+        self.container = ttk.Frame(self.main_card, style="App.Receipt.Content.TFrame", padding=(40, 26))
         self.container.pack(fill="both", expand=True)
 
-        top_row = ttk.Frame(self.container, style="Receipt.Content.TFrame")
+        top_row = ttk.Frame(self.container, style="App.Receipt.Content.TFrame")
         top_row.pack(fill="x", pady=5)
 
-        date_frame = ttk.Frame(top_row, style="Receipt.Content.TFrame")
+        date_frame = ttk.Frame(top_row, style="App.Receipt.Content.TFrame")
         date_frame.pack(side="left", fill="x", expand=True)
         self.ent_date = self._create_full_width_field(date_frame, "تاريخ الاستلام :")
 
-        id_frame = ttk.Frame(top_row, style="Receipt.Content.TFrame")
+        id_frame = ttk.Frame(top_row, style="App.Receipt.Content.TFrame")
         id_frame.pack(side="right", fill="x", expand=True, padx=(20, 0))
         self.ent_id = self._create_full_width_field(id_frame, "رقم السند :", textvariable=self.voucher_id_var, state="readonly")
 
@@ -111,11 +134,11 @@ class ReceiptVoucherScreen:
 
         self.txt_desc = self._create_full_width_field(self.container, "البيان / العربون :", widget_type="text")
 
-        self.total_box = ttk.Frame(self.container, style="Receipt.Total.TFrame", padding=16)
+        self.total_box = ttk.Frame(self.container, style="App.Receipt.Total.TFrame", padding=16)
         self.total_box.pack(fill="x", pady=(24, 0))
-        self.lbl_total_num = ttk.Label(self.total_box, text="إجمالي القبض: 0.00 ر.ي", style="Receipt.TotalAmount.TLabel", anchor="center")
+        self.lbl_total_num = ttk.Label(self.total_box, text="إجمالي القبض: 0.00 ر.ي", style="App.Receipt.TotalAmount.TLabel", anchor="center")
         self.lbl_total_num.pack()
-        self.lbl_total_word = ttk.Label(self.total_box, text="فقط وقدره: لا شيء ريال يمني لا غير", style="Receipt.TotalWords.TLabel", anchor="center")
+        self.lbl_total_word = ttk.Label(self.total_box, text="فقط وقدره: لا شيء ريال يمني لا غير", style="App.Receipt.TotalWords.TLabel", anchor="center")
         self.lbl_total_word.pack(pady=5)
 
     def _filter_properties(self, event=None):
