@@ -1,0 +1,3 @@
+ttkbootstrap
+psycopg2-binary
+

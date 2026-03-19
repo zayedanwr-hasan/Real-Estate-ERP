@@ -8,6 +8,10 @@ class SubCodingOpeningBalances:
     def __init__(self, master):
         self.master = master
 
+        # Enforced by finance.vouchers CHECK constraint.
+        self.allowed_opening_v_type = "رصيد افتتاحى"
+        self._balance_preview_guard = False
+
         # Palette
         self.primary_color = "#2c3e50"
         self.sidebar_color = "#34495e"
@@ -183,8 +187,8 @@ class SubCodingOpeningBalances:
         table_card.grid_columnconfigure(0, weight=1)
 
         ttk.Label(table_card, text="العقارات المسجلة", style="App.CardTitle.TLabel").grid(row=0, column=0, sticky="e", pady=(0,8))
-        cols = ("id", "name", "cost", "loc")
-        heads = ["كود", "اسم العقار", "تكلفة/مساحة", "الموقع"]
+        cols = ("id", "name", "cost", "area", "loc")
+        heads = ["كود", "اسم العقار", "التكلفة", "المساحة", "الموقع"]
         self.plot_tree = self._create_tree(table_card, 1, 0, cols, heads)
         self.plot_tree.bind("<<TreeviewSelect>>", self._on_plot_select)
 
@@ -196,11 +200,13 @@ class SubCodingOpeningBalances:
         ttk.Label(form_card, text="بيانات العقار", style="App.CardTitle.TLabel").grid(row=0, column=0, sticky="e", pady=(0,8))
 
         self.p_name = self._create_label_entry(form_card, "اسم العقار:", 1)
-        self.p_area = self._create_label_entry(form_card, "التكلفة/المساحة:", 3)
-        self.p_loc = self._create_label_entry(form_card, "الموقع:", 5)
+        self.p_cost = self._create_label_entry(form_card, "التكلفة:", 3)
+        self.p_cost.bind("<FocusOut>", lambda _e: self._format_money_entry(self.p_cost))
+        self.p_area = self._create_label_entry(form_card, "المساحة:", 5)
+        self.p_loc = self._create_label_entry(form_card, "الموقع:", 7)
 
         ttk.Button(form_card, text="حفظ العقار", style="App.SubCoding.Success.TButton", command=self._save_plot).grid(
-            row=7, column=0, sticky="ew", pady=(12, 0)
+            row=9, column=0, sticky="ew", pady=(12, 0)
         )
 
     # ---------------------------
@@ -238,9 +244,9 @@ class SubCodingOpeningBalances:
         self.v_plot_cb.grid(row=6, column=0, sticky="ew", pady=(0,8))
 
         self.v_balance = self._create_label_entry(form_card, "رصيد افتتاحي (مدين):", 8)
-        self.v_balance.insert(0, "0")
+        self.v_balance.insert(0, "0.00")
         self.v_balance.bind("<KeyRelease>", lambda _e: self._update_balance_preview())
-        self.v_balance.bind("<FocusOut>", lambda _e: self._update_balance_preview())
+        self.v_balance.bind("<FocusOut>", lambda _e: self._update_balance_preview(force_format=True))
 
         # summary box
         self._build_summary_box(form_card, 10)
@@ -273,7 +279,16 @@ class SubCodingOpeningBalances:
         frame.grid_columnconfigure(0, weight=1)
 
         tree = ttk.Treeview(frame, columns=cols, show="headings", selectmode="browse", style="App.Treeview")
-        widths = {"id": 80, "name": 240, "cost": 140, "loc": 160, "group": 140, "property": 190, "bal": 120}
+        widths = {
+            "id": 80,
+            "name": 240,
+            "cost": 140,
+            "area": 140,
+            "loc": 160,
+            "group": 140,
+            "property": 190,
+            "bal": 120,
+        }
 
         for col_name, head in zip(cols, heads):
             tree.heading(col_name, text=head, anchor="center")
@@ -311,9 +326,65 @@ class SubCodingOpeningBalances:
             return
         for index, row in enumerate(rows):
             tag = "even" if index % 2 == 0 else "odd"
-            # ensure all values converted to string to avoid display errors
             vals = tuple("" if v is None else v for v in row)
             tree.insert("", "end", iid=str(row[0]), values=vals, tags=(tag,))
+
+    # ---------------------------
+    # Numeric / voucher validators
+    # ---------------------------
+    def _normalize_number_text(self, text):
+        if text is None:
+            return ""
+        normalized = str(text).strip()
+        if not normalized:
+            return ""
+
+        # Support Arabic-Indic digits and Arabic separators.
+        trans = str.maketrans("٠١٢٣٤٥٦٧٨٩", "0123456789")
+        normalized = normalized.translate(trans)
+        normalized = normalized.replace("\u066c", ",").replace("\u066b", ".")
+        normalized = normalized.replace(" ", "").replace(",", "")
+        return normalized
+
+    def _try_parse_amount(self, text):
+        normalized = self._normalize_number_text(text)
+        if normalized == "":
+            return None
+        try:
+            return float(normalized)
+        except Exception:
+            return None
+
+    def _format_amount(self, value):
+        try:
+            return f"{float(value):,.2f}"
+        except Exception:
+            return "0.00"
+
+    def _format_money_entry(self, entry_widget):
+        raw = entry_widget.get().strip()
+        parsed = self._try_parse_amount(raw)
+        if parsed is None:
+            return
+        entry_widget.delete(0, "end")
+        entry_widget.insert(0, self._format_amount(parsed))
+
+    def _parse_required_amount(self, text, field_label):
+        parsed = self._try_parse_amount(text)
+        if parsed is None:
+            messagebox.showerror("خطأ", f"{field_label} يجب أن يكون رقمًا صحيحًا")
+            return None
+        return parsed
+
+    def _validate_opening_v_type(self, v_type):
+        # Guard against CHECK constraint failures on finance.vouchers.v_type.
+        if v_type != self.allowed_opening_v_type:
+            messagebox.showerror(
+                "خطأ",
+                "قيمة نوع القيد غير مسموحة. يجب أن تكون 'رصيد افتتاحى' فقط لتفادي خطأ CHECK constraint.",
+            )
+            return False
+        return True
 
     def _refresh_all_data(self):
         conn = get_connection()
@@ -327,7 +398,8 @@ class SubCodingOpeningBalances:
                 """
                 SELECT id,
                        property_name,
-                       COALESCE(total_cost, purchase_price, 0) AS total_cost,
+                       COALESCE(total_cost, 0) AS total_cost,
+                       COALESCE(purchase_price, 0) AS area_value,
                        COALESCE(location, '') AS location
                 FROM finance.properties
                 ORDER BY id DESC
@@ -335,7 +407,17 @@ class SubCodingOpeningBalances:
             )
             self.plot_rows_cache = cur.fetchall()
             self.plot_map = {int(r[0]): r for r in self.plot_rows_cache}
-            self._fill_tree(self.plot_tree, self.plot_rows_cache, 4)
+            plot_display_rows = [
+                (
+                    r[0],
+                    r[1],
+                    self._format_amount(r[2] if r[2] is not None else 0),
+                    r[3] if r[3] is not None else "",
+                    r[4],
+                )
+                for r in self.plot_rows_cache
+            ]
+            self._fill_tree(self.plot_tree, plot_display_rows, 5)
 
             # fill property combobox
             self.v_plot_cb["values"] = [f"{r[0]} - {r[1]}" for r in self.plot_rows_cache]
@@ -379,7 +461,11 @@ class SubCodingOpeningBalances:
                 }
                 for r in vendor_rows_raw
             }
-            self._fill_tree(self.vendor_tree, self.vendor_rows_cache, 5)
+            vendor_display_rows = [
+                (r[0], r[1], r[2], r[3], self._format_amount(r[4] if r[4] is not None else 0))
+                for r in self.vendor_rows_cache
+            ]
+            self._fill_tree(self.vendor_tree, vendor_display_rows, 5)
         except Exception as e:
             messagebox.showerror("خطأ", str(e))
         finally:
@@ -393,25 +479,29 @@ class SubCodingOpeningBalances:
     # ---------------------------
     def _save_plot(self):
         name = self.p_name.get().strip()
-        cost = self.p_area.get().strip()
+        cost = self.p_cost.get().strip()
+        area = self.p_area.get().strip()
         loc = self.p_loc.get().strip()
 
         if not name:
             return messagebox.showwarning("تنبيه", "أدخل اسم العقار")
 
-        try:
-            cost_val = float(cost) if cost else None
-        except Exception:
-            return messagebox.showwarning("تنبيه", "التكلفة/المساحة غير صحيحة")
+        cost_val = None
+        if cost:
+            cost_val = self._parse_required_amount(cost, "التكلفة")
+            if cost_val is None:
+                return
 
+        # المساحة الآن حقل نصي حر (مثل: متر/لبنة/ك) لذا لا نطبّق عليه تحويل رقمي.
+        area_val = area if area else None
         conn = get_connection()
         if not conn:
             return messagebox.showerror("خطأ", "تعذر الاتصال بقاعدة البيانات")
         cur = conn.cursor()
         try:
             cur.execute(
-                "INSERT INTO finance.properties (property_name, total_cost, location) VALUES (%s, %s, %s)",
-                (name, cost_val, loc),
+                "INSERT INTO finance.properties (property_name, total_cost, purchase_price, location) VALUES (%s, %s, %s, %s)",
+                (name, cost_val, area_val, loc),
             )
             conn.commit()
             messagebox.showinfo("نجاح", "تم حفظ العقار")
@@ -427,10 +517,12 @@ class SubCodingOpeningBalances:
         name = self.v_name.get().strip()
         group = self.v_group.get().strip()
         plot_info = self.v_plot_cb.get().strip()
-        try:
-            bal = float(self.v_balance.get().strip() or 0)
-        except Exception:
-            return messagebox.showwarning("تنبيه", "الرجاء إدخال رصيد افتتاحي صحيح")
+        bal = self._parse_required_amount(self.v_balance.get().strip() or "0", "الرصيد الافتتاحي")
+        if bal is None:
+            return
+
+        if not self._validate_opening_v_type(self.allowed_opening_v_type):
+            return
 
         if not name:
             return messagebox.showwarning("تنبيه", "أكمل بيانات الوارث (الاسم)")
@@ -451,9 +543,14 @@ class SubCodingOpeningBalances:
             v_id = cur.fetchone()[0]
 
             if bal > 0:
+                # Validate fixed opening voucher type before INSERT to avoid CHECK constraint violations.
+                if not self._validate_opening_v_type(self.allowed_opening_v_type):
+                    conn.rollback()
+                    return
+
                 cur.execute(
                     "INSERT INTO finance.vouchers (v_type, v_date, description) VALUES (%s, CURRENT_DATE, %s) RETURNING id",
-                    ("رصيد افتتاحى", f"رصيد أول المدة: {name}"),
+                    (self.allowed_opening_v_type, f"رصيد أول المدة: {name}"),
                 )
                 voc_id = cur.fetchone()[0]
 
@@ -517,11 +614,25 @@ class SubCodingOpeningBalances:
             return
 
         if active_tab == 0:
-            filtered = [r for r in self.plot_rows_cache if query in str(r[1]).lower() or query in str(r[3] or "").lower()]
-            self._fill_tree(self.plot_tree, filtered, 4)
+            filtered = [r for r in self.plot_rows_cache if query in str(r[1]).lower() or query in str(r[4] or "").lower()]
+            filtered_display = [
+                (
+                    r[0],
+                    r[1],
+                    self._format_amount(r[2] if r[2] is not None else 0),
+                    r[3] if r[3] is not None else "",
+                    r[4],
+                )
+                for r in filtered
+            ]
+            self._fill_tree(self.plot_tree, filtered_display, 5)
         else:
             filtered = [r for r in self.vendor_rows_cache if query in str(r[1]).lower() or query in str(r[2] or "").lower() or query in str(r[3] or "").lower()]
-            self._fill_tree(self.vendor_tree, filtered, 5)
+            filtered_display = [
+                (r[0], r[1], r[2], r[3], self._format_amount(r[4] if r[4] is not None else 0))
+                for r in filtered
+            ]
+            self._fill_tree(self.vendor_tree, filtered_display, 5)
 
     def _action_exit(self):
         if messagebox.askyesno("تأكيد", "هل تريد إغلاق هذه الشاشة؟"):
@@ -533,6 +644,7 @@ class SubCodingOpeningBalances:
     def _clear_plot_form(self):
         self.selected_plot_id = None
         self.p_name.delete(0, "end")
+        self.p_cost.delete(0, "end")
         self.p_area.delete(0, "end")
         self.p_loc.delete(0, "end")
         try:
@@ -545,7 +657,7 @@ class SubCodingOpeningBalances:
         self.v_name.delete(0, "end")
         self.v_group.delete(0, "end")
         self.v_balance.delete(0, "end")
-        self.v_balance.insert(0, "0")
+        self.v_balance.insert(0, "0.00")
         self.v_plot_cb.set("")
         self._update_balance_preview()
         try:
@@ -566,8 +678,9 @@ class SubCodingOpeningBalances:
             return
         # populate
         self.p_name.delete(0, "end"); self.p_name.insert(0, row[1] or "")
-        self.p_area.delete(0, "end"); self.p_area.insert(0, str(row[2]) if row[2] is not None else "")
-        self.p_loc.delete(0, "end"); self.p_loc.insert(0, row[3] or "")
+        self.p_cost.delete(0, "end"); self.p_cost.insert(0, self._format_amount(row[2] if row[2] is not None else 0))
+        self.p_area.delete(0, "end"); self.p_area.insert(0, row[3] if row[3] is not None else "")
+        self.p_loc.delete(0, "end"); self.p_loc.insert(0, row[4] or "")
 
     def _on_vendor_select(self, _event=None):
         selected = self.vendor_tree.selection()
@@ -582,7 +695,7 @@ class SubCodingOpeningBalances:
             return
         self.v_name.delete(0, "end"); self.v_name.insert(0, row["name"] or "")
         self.v_group.delete(0, "end"); self.v_group.insert(0, row["group"] or "")
-        self.v_balance.delete(0, "end"); self.v_balance.insert(0, str(row["balance"] or 0))
+        self.v_balance.delete(0, "end"); self.v_balance.insert(0, self._format_amount(row["balance"] or 0))
         # attempt to set combobox by property name
         prop_name = row.get("property_name")
         if prop_name and prop_name != "-":
@@ -602,24 +715,30 @@ class SubCodingOpeningBalances:
             return messagebox.showwarning("تنبيه", "اختر عقارًا من الجدول أولاً")
 
         name = self.p_name.get().strip()
-        cost = self.p_area.get().strip()
+        cost = self.p_cost.get().strip()
+        area = self.p_area.get().strip()
         loc = self.p_loc.get().strip()
 
         if not name:
             return messagebox.showwarning("تنبيه", "أدخل اسم العقار")
 
-        try:
-            cost_val = float(cost) if cost else None
-        except Exception:
-            return messagebox.showwarning("تنبيه", "التكلفة/المساحة غير صحيحة")
+        cost_val = None
+        if cost:
+            cost_val = self._parse_required_amount(cost, "التكلفة")
+            if cost_val is None:
+                return
 
+        # المساحة حقل نصي حر.
+        area_val = area if area else None
         conn = get_connection()
         if not conn:
             return messagebox.showerror("خطأ", "تعذر الاتصال بقاعدة البيانات")
         cur = conn.cursor()
         try:
-            cur.execute("UPDATE finance.properties SET property_name=%s, total_cost=%s, location=%s WHERE id=%s",
-                        (name, cost_val, loc, self.selected_plot_id))
+            cur.execute(
+                "UPDATE finance.properties SET property_name=%s, total_cost=%s, purchase_price=%s, location=%s WHERE id=%s",
+                (name, cost_val, area_val, loc, self.selected_plot_id),
+            )
             conn.commit()
             messagebox.showinfo("نجاح", "تم تعديل بيانات العقار")
             self._clear_plot_form()
@@ -637,10 +756,12 @@ class SubCodingOpeningBalances:
         name = self.v_name.get().strip()
         group = self.v_group.get().strip()
         plot_info = self.v_plot_cb.get().strip()
-        try:
-            bal = float(self.v_balance.get().strip() or 0)
-        except Exception:
-            return messagebox.showwarning("تنبيه", "الرصيد غير صحيح")
+        bal = self._parse_required_amount(self.v_balance.get().strip() or "0", "الرصيد الافتتاحي")
+        if bal is None:
+            return
+
+        if not self._validate_opening_v_type(self.allowed_opening_v_type):
+            return
 
         if not name:
             return messagebox.showwarning("تنبيه", "أكمل بيانات الوارث (الاسم)")
@@ -671,11 +792,17 @@ class SubCodingOpeningBalances:
                 ORDER BY l.id
                 LIMIT 1
                 """,
-                (self.selected_vendor_id, "رصيد افتتاحى"),
+                (self.selected_vendor_id, self.allowed_opening_v_type),
             )
             opening_voucher = cur.fetchone()
             if opening_voucher:
                 voucher_id = opening_voucher[0]
+
+                # Validate allowed type before any opening voucher-linked update to keep data consistent.
+                if not self._validate_opening_v_type(self.allowed_opening_v_type):
+                    conn.rollback()
+                    return
+
                 cur.execute(
                     "UPDATE finance.ledger SET property_id=%s, debit=%s WHERE voucher_id=%s AND vendor_id=%s AND account_code='2101'",
                     (property_id, bal, voucher_id, self.selected_vendor_id),
@@ -735,7 +862,7 @@ class SubCodingOpeningBalances:
                 WHERE l.vendor_id = %s
                   AND COALESCE(v.v_type, '') <> %s
                 """,
-                (self.selected_vendor_id, "رصيد افتتاحى"),
+                (self.selected_vendor_id, self.allowed_opening_v_type),
             )
             has_non_opening_entries = cur.fetchone()[0]
             if has_non_opening_entries > 0:
@@ -748,7 +875,7 @@ class SubCodingOpeningBalances:
                 JOIN finance.vouchers v ON v.id = l.voucher_id
                 WHERE l.vendor_id = %s AND v.v_type = %s
                 """,
-                (self.selected_vendor_id, "رصيد افتتاحى"),
+                (self.selected_vendor_id, self.allowed_opening_v_type),
             )
             opening_vouchers = [r[0] for r in cur.fetchall() if r[0] is not None]
 
@@ -770,14 +897,33 @@ class SubCodingOpeningBalances:
     # ---------------------------
     # UX helpers
     # ---------------------------
-    def _update_balance_preview(self):
-        text = self.v_balance.get().strip()
-        try:
-            value = float(text or 0)
-        except Exception:
-            value = 0.0
-        self.summary_amount_var.set(f"{value:,.2f}")
-        self.summary_words_var.set(self._amount_to_words(value))
+    def _update_balance_preview(self, force_format=False):
+        if self._balance_preview_guard:
+            return
+
+        raw_text = self.v_balance.get().strip()
+        parsed = self._try_parse_amount(raw_text)
+
+        if parsed is None:
+            # Keep UX safe while typing; force 0.00 when leaving the field.
+            parsed = 0.0
+            if force_format:
+                self._balance_preview_guard = True
+                self.v_balance.delete(0, "end")
+                self.v_balance.insert(0, self._format_amount(parsed))
+                self._balance_preview_guard = False
+        else:
+            formatted = self._format_amount(parsed)
+            current_normalized = self._normalize_number_text(raw_text)
+            target_normalized = self._normalize_number_text(formatted)
+            if force_format or current_normalized != target_normalized:
+                self._balance_preview_guard = True
+                self.v_balance.delete(0, "end")
+                self.v_balance.insert(0, formatted)
+                self._balance_preview_guard = False
+
+        self.summary_amount_var.set(self._format_amount(parsed))
+        self.summary_words_var.set(self._amount_to_words(parsed))
 
     def _amount_to_words(self, value):
         number = int(abs(value))
@@ -822,6 +968,4 @@ class SubCodingOpeningBalances:
             chunks.append(under_1000(rest))
 
         return " و ".join([c for c in chunks if c])
-
-# Example usage:
 

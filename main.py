@@ -6,7 +6,7 @@ from payment_vouchers import PaymentVoucherScreen
 from receipt_vouchers import ReceiptVoucherScreen
 from chart_of_accounts import ChartOfAccountsScreen
 from sub_coding_opening_balances import SubCodingOpeningBalances
-from manual_journal import ManualJournalScreen
+from adjustment_journal import AdjustmentJournalEntryScreen
 
 
 class RealEstateApp:
@@ -131,7 +131,7 @@ class RealEstateApp:
             ("🔗 الترميز الفرعي", self.open_sub_coding),
             ("📤 سند صرف نقدي", self.open_payment_voucher),
             ("📥 سند قبض نقدي", self.open_receipt_voucher),
-            ("📝 قيد يومية", self.open_manual_journal),
+            ("🧾 قيد تسوية", self.open_adjustment_journal),
             ("📊 التقارير", self.open_reports),
             ("⚙️ الإعدادات", self.dummy_msg),
             ("🚪 خروج", self.root.quit),
@@ -195,9 +195,10 @@ class RealEstateApp:
         self.clear_display_area()
         self.current_page = SubCodingOpeningBalances(self.display_area)
 
-    def open_manual_journal(self):
+
+    def open_adjustment_journal(self):
         self.clear_display_area()
-        self.current_page = ManualJournalScreen(self.display_area)
+        self.current_page = AdjustmentJournalEntryScreen(self.display_area)
 
     def open_reports(self):
         messagebox.showinfo("قريباً", "قيد التطوير")
