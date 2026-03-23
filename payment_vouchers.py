@@ -3,6 +3,7 @@ from tkinter import messagebox, simpledialog
 from datetime import datetime
 import ttkbootstrap as ttk
 from db_connection import get_connection
+from combobox_helper import bind_searchable_combobox, set_combobox_values
 
 
 class PaymentVoucherScreen:
@@ -127,11 +128,11 @@ class PaymentVoucherScreen:
         id_frame.pack(side="right", fill="x", expand=True, padx=(20, 0))
         self.ent_id = self._create_full_width_field(id_frame, "رقم السند :", textvariable=self.voucher_id_var, state="readonly")
 
-        self.combo_project = self._create_full_width_field(self.container, "المشروع التابع :", widget_type="combo", state="readonly")
-        self.combo_project.bind("<<ComboboxSelected>>", self._filter_properties)
-
         self.combo_prop = self._create_full_width_field(self.container, "العقار / الوحدة :", widget_type="combo", state="readonly")
         self.combo_acc = self._create_full_width_field(self.container, "الحساب المحاسبي المدين :", widget_type="combo", state="readonly")
+
+        bind_searchable_combobox(self.combo_prop)
+        bind_searchable_combobox(self.combo_acc)
 
         self.ent_amount = self._create_full_width_field(self.container, "المبلغ المستحق صرفه :", textvariable=self.amount_var)
         self.ent_amount.configure(font=("Segoe UI", 22, "bold"), foreground="#c0392b")
@@ -145,20 +146,8 @@ class PaymentVoucherScreen:
         self.lbl_total_word = ttk.Label(self.total_box, text="فقط وقدره: لا شيء ريال يمني لا غير", style="App.Payment.TotalWords.TLabel", anchor="center")
         self.lbl_total_word.pack(pady=5)
 
-    def _filter_properties(self, event=None):
-        project_selection = self.combo_project.get()
-        if not project_selection: return
-        project_id = project_selection.split(' - ')[0]
-        conn = get_connection()
-        if conn:
-            cur = conn.cursor()
-            cur.execute("SELECT id, property_name FROM finance.properties WHERE project_id = %s", (project_id,))
-            self.combo_prop['values'] = [f"{r[0]} - {r[1]}" for r in cur.fetchall()]
-            self.combo_prop.set('')  # مسح الاختيار السابق عند تغيير المشروع
-            conn.close()
-
     def _set_fields_state(self, state):
-        widgets = [self.ent_date, self.combo_project, self.combo_prop, self.combo_acc, self.ent_amount]
+        widgets = [self.ent_date, self.combo_prop, self.combo_acc, self.ent_amount]
         for w in widgets:
             w.config(state=state)
         self.txt_desc.config(state='normal' if state == 'normal' else 'disabled', bg="white" if state == 'normal' else "#f5f6f7")
@@ -225,13 +214,11 @@ class PaymentVoucherScreen:
         conn = get_connection()
         if conn:
             cur = conn.cursor()
-            # جلب المشاريع أولاً
-            cur.execute("SELECT id, project_name FROM finance.projects")
-            self.combo_project['values'] = [f"{r[0]} - {r[1]}" for r in cur.fetchall()]
+            cur.execute("SELECT id, property_name FROM finance.properties ORDER BY property_name")
+            set_combobox_values(self.combo_prop, [f"{r[0]} - {r[1]}" for r in cur.fetchall()])
 
-            # جلب الحسابات
             cur.execute("SELECT account_code, account_name FROM finance.accounts WHERE account_type='تحليلي'")
-            self.combo_acc['values'] = [f"{r[0]} - {r[1]}" for r in cur.fetchall()]
+            set_combobox_values(self.combo_acc, [f"{r[0]} - {r[1]}" for r in cur.fetchall()])
             conn.close()
 
     def _update_total_display(self, *args):
@@ -257,12 +244,10 @@ class PaymentVoucherScreen:
                        v.v_date,
                        v.description,
                        l.property_id,
-                       COALESCE(p.project_id, 0) AS project_id,
                        l.account_code,
                        COALESCE(l.debit, 0) AS amount
                 FROM finance.vouchers v
                 JOIN finance.ledger l ON l.voucher_id = v.id
-                LEFT JOIN finance.properties p ON p.id = l.property_id
                 WHERE v.id = %s
                   AND v.v_type = 'صرف'
                 ORDER BY l.id
@@ -280,21 +265,15 @@ class PaymentVoucherScreen:
             self.ent_date.insert(0, str(row[1]))
             self.txt_desc.delete("1.0", tk.END)
             self.txt_desc.insert("1.0", row[2] or "")
-            self.amount_var.set(str(row[6]))
-
-            if row[4]:
-                project_match = [v for v in self.combo_project['values'] if v.startswith(f"{row[4]} -")]
-                if project_match:
-                    self.combo_project.set(project_match[0])
-                    self._filter_properties()
+            self.amount_var.set(str(row[5]))
 
             if row[3]:
                 prop_match = [v for v in self.combo_prop['values'] if v.startswith(f"{row[3]} -")]
                 if prop_match:
                     self.combo_prop.set(prop_match[0])
 
-            if row[5]:
-                acc_match = [v for v in self.combo_acc['values'] if v.startswith(f"{row[5]} -")]
+            if row[4]:
+                acc_match = [v for v in self.combo_acc['values'] if v.startswith(f"{row[4]} -")]
                 if acc_match:
                     self.combo_acc.set(acc_match[0])
         except Exception as e:

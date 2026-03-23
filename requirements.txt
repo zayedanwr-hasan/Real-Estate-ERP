@@ -1,3 +1,5 @@
 ttkbootstrap
 psycopg2-binary
-
+pandas
+openpyxl
+reportlab

@@ -5,6 +5,7 @@ import ttkbootstrap as ttk
 from ttkbootstrap.constants import END
 
 from db_connection import get_connection
+from combobox_helper import bind_searchable_combobox, set_combobox_values
 
 
 class AdjustmentJournalEntryScreen:
@@ -28,7 +29,6 @@ class AdjustmentJournalEntryScreen:
         self.account_data = {}
         self.property_data = {}
         self.vendor_data = {}
-        self.project_data = {}
 
         self.voucher_id_var = tk.StringVar(value="تلقائي")
         self.voucher_date_var = tk.StringVar(value=datetime.now().strftime("%Y-%m-%d"))
@@ -39,7 +39,6 @@ class AdjustmentJournalEntryScreen:
         self.line_credit_var = tk.StringVar(value="0.00")
         self.line_property_var = tk.StringVar()
         self.line_vendor_var = tk.StringVar()
-        self.line_project_var = tk.StringVar()
 
         self.total_debit_var = tk.StringVar(value="0.00")
         self.total_credit_var = tk.StringVar(value="0.00")
@@ -200,14 +199,13 @@ class AdjustmentJournalEntryScreen:
 
         ttk.Label(card, text="إدخال سطر القيد", style="Adj.SectionTitle.TLabel").grid(row=0, column=3, sticky="e", pady=(0, 8))
 
-        self.combo_line_account = self._create_field(card, "الحساب :", 1, 3, widget_type="combo", textvariable=self.line_account_var, state="readonly")
+        self.combo_line_account = self._create_field(card, "الحساب :", 1, 3, widget_type="combo", textvariable=self.line_account_var)
         self.ent_line_desc = self._create_field(card, "الوصف :", 1, 2, textvariable=self.line_desc_var)
         self.ent_line_debit = self._create_field(card, "مدين :", 1, 1, textvariable=self.line_debit_var)
         self.ent_line_credit = self._create_field(card, "دائن :", 1, 0, textvariable=self.line_credit_var)
 
-        self.combo_line_property = self._create_field(card, "العقار :", 2, 3, widget_type="combo", textvariable=self.line_property_var, state="readonly")
-        self.combo_line_vendor = self._create_field(card, "المورد / الوارث :", 2, 2, widget_type="combo", textvariable=self.line_vendor_var, state="readonly")
-        self.combo_line_project = self._create_field(card, "المشروع :", 2, 1, widget_type="combo", textvariable=self.line_project_var, state="readonly")
+        self.combo_line_property = self._create_field(card, "العقار :", 2, 3, widget_type="combo", textvariable=self.line_property_var)
+        self.combo_line_vendor = self._create_field(card, "المورد / الوارث :", 2, 2, widget_type="combo", textvariable=self.line_vendor_var)
 
         line_btns = ttk.Frame(card, style="Adj.Content.TFrame")
         line_btns.grid(row=3, column=0, columnspan=4, sticky="ew", pady=(10, 0))
@@ -240,7 +238,7 @@ class AdjustmentJournalEntryScreen:
 
         ttk.Label(card, text="جدول القيد (Invoice Style)", style="Adj.SectionTitle.TLabel").grid(row=0, column=0, sticky="e", pady=(0, 8))
 
-        cols = ("account", "description", "debit", "credit", "property", "vendor", "project")
+        cols = ("account", "description", "debit", "credit", "property", "vendor")
         self.tree = ttk.Treeview(card, columns=cols, show="headings", style="Adj.Treeview", selectmode="browse")
 
         headers = {
@@ -250,9 +248,8 @@ class AdjustmentJournalEntryScreen:
             "credit": "دائن",
             "property": "العقار",
             "vendor": "المورد/الوارث",
-            "project": "المشروع",
         }
-        widths = {"account": 260, "description": 220, "debit": 120, "credit": 120, "property": 180, "vendor": 180, "project": 180}
+        widths = {"account": 300, "description": 260, "debit": 120, "credit": 120, "property": 220, "vendor": 220}
 
         for c in cols:
             self.tree.heading(c, text=headers[c], anchor="e")
@@ -303,6 +300,7 @@ class AdjustmentJournalEntryScreen:
         ttk.Label(box, text=label_text, style="Adj.FieldLabel.TLabel", width=16).grid(row=0, column=1, sticky="ns")
         return field
 
+
     def _bind_events(self):
         self.frame.bind_all("<Control-s>", lambda _e: self._save_voucher())
         self.frame.bind_all("<Control-S>", lambda _e: self._save_voucher())
@@ -311,7 +309,6 @@ class AdjustmentJournalEntryScreen:
         self.tree.bind("<Double-1>", self._on_tree_double_click)
         self.tree.bind("<Delete>", lambda _e: self._delete_selected_line())
         self.frame.bind_all("<Delete>", self._on_delete_key)
-        self.combo_line_property.bind("<<ComboboxSelected>>", lambda _e: self._on_property_selected())
 
         for w in (
             self.combo_line_account,
@@ -320,9 +317,12 @@ class AdjustmentJournalEntryScreen:
             self.ent_line_credit,
             self.combo_line_property,
             self.combo_line_vendor,
-            self.combo_line_project,
         ):
             w.bind("<Return>", self._handle_enter_key)
+
+        bind_searchable_combobox(self.combo_line_account)
+        bind_searchable_combobox(self.combo_line_property)
+        bind_searchable_combobox(self.combo_line_vendor)
 
     def _on_tree_double_click(self, _event=None):
         # Reuse existing selection-to-form behavior on double click.
@@ -358,19 +358,15 @@ class AdjustmentJournalEntryScreen:
                     for r in cur.fetchall()
                 }
 
-            cur.execute("SELECT id, property_name, COALESCE(project_id, 0) FROM finance.properties ORDER BY property_name")
-            self.property_data = {f"{r[0]} - {r[1]}": {"id": r[0], "name": r[1], "project_id": r[2] or None} for r in cur.fetchall()}
+            cur.execute("SELECT id, property_name FROM finance.properties ORDER BY property_name")
+            self.property_data = {f"{r[0]} - {r[1]}": {"id": r[0], "name": r[1]} for r in cur.fetchall()}
 
             cur.execute("SELECT id, vendor_name FROM finance.vendors ORDER BY vendor_name")
             self.vendor_data = {f"{r[0]} - {r[1]}": {"id": r[0], "name": r[1]} for r in cur.fetchall()}
 
-            cur.execute("SELECT id, project_name FROM finance.projects ORDER BY project_name")
-            self.project_data = {f"{r[0]} - {r[1]}": {"id": r[0], "name": r[1]} for r in cur.fetchall()}
-
-            self.combo_line_account["values"] = list(self.account_data.keys())
-            self.combo_line_property["values"] = list(self.property_data.keys())
-            self.combo_line_vendor["values"] = list(self.vendor_data.keys())
-            self.combo_line_project["values"] = list(self.project_data.keys())
+            set_combobox_values(self.combo_line_account, self.account_data.keys())
+            set_combobox_values(self.combo_line_property, self.property_data.keys())
+            set_combobox_values(self.combo_line_vendor, self.vendor_data.keys())
         except Exception as e:
             messagebox.showerror("خطأ", str(e))
         finally:
@@ -449,11 +445,9 @@ class AdjustmentJournalEntryScreen:
 
         prop_text = self.line_property_var.get().strip()
         ven_text = self.line_vendor_var.get().strip()
-        proj_text = self.line_project_var.get().strip()
 
         prop_id, prop_name = self._resolve_dimension(self.property_data, prop_text)
         ven_id, ven_name = self._resolve_dimension(self.vendor_data, ven_text)
-        proj_id, proj_name = self._resolve_dimension(self.project_data, proj_text)
 
         return {
             "account_id": account.get("id"),
@@ -469,9 +463,6 @@ class AdjustmentJournalEntryScreen:
             "vendor_id": ven_id,
             "vendor_name": ven_name,
             "vendor_text": ven_text,
-            "project_id": proj_id,
-            "project_name": proj_name,
-            "project_text": proj_text,
         }
 
     def _format_line_values(self, line):
@@ -482,7 +473,6 @@ class AdjustmentJournalEntryScreen:
             f"{line['credit']:,.2f}",
             line["property_text"],
             line["vendor_text"],
-            line["project_text"],
         )
 
     def _clear_line_form(self):
@@ -493,7 +483,6 @@ class AdjustmentJournalEntryScreen:
         self.line_credit_var.set("0.00")
         self.line_property_var.set("")
         self.line_vendor_var.set("")
-        self.line_project_var.set("")
 
         self.tree.selection_remove(self.tree.selection())
         self.btn_update_line.configure(state="disabled")
@@ -531,7 +520,6 @@ class AdjustmentJournalEntryScreen:
         self.line_credit_var.set(f"{line['credit']:.2f}")
         self.line_property_var.set(line["property_text"])
         self.line_vendor_var.set(line["vendor_text"])
-        self.line_project_var.set(line["project_text"])
 
         self.btn_update_line.configure(state="normal")
         self.btn_delete_line.configure(state="normal")
@@ -565,18 +553,6 @@ class AdjustmentJournalEntryScreen:
         self._apply_tree_striping()
         self._refresh_totals_status()
         self._clear_line_form()
-
-    def _on_property_selected(self):
-        prop = self.property_data.get(self.line_property_var.get().strip())
-        if not prop:
-            return
-        proj_id = prop.get("project_id")
-        if not proj_id:
-            return
-        for text, payload in self.project_data.items():
-            if payload["id"] == proj_id:
-                self.line_project_var.set(text)
-                return
 
     def _refresh_totals_status(self):
         total_debit = sum(x["debit"] for x in self.entry_lines)
@@ -647,10 +623,6 @@ class AdjustmentJournalEntryScreen:
         else:
             columns.append("account_code")
             values.append(line["account_code"])
-
-        if self._schema_has_column(cur, "ledger", "project_id"):
-            columns.append("project_id")
-            values.append(line["project_id"])
 
         if self._schema_has_column(cur, "ledger", "description"):
             columns.append("description")
@@ -780,14 +752,11 @@ class AdjustmentJournalEntryScreen:
             conn.close()
 
     def _fetch_ledger_lines(self, cur, voucher_id):
-        has_project = self._schema_has_column(cur, "ledger", "project_id")
         has_desc = self._schema_has_column(cur, "ledger", "description")
         has_account_id = self._schema_has_column(cur, "ledger", "account_id")
 
         account_join = "LEFT JOIN finance.accounts a ON a.id = l.account_id" if has_account_id else "LEFT JOIN finance.accounts a ON TRIM(a.account_code) = TRIM(l.account_code)"
         account_code_select = "TRIM(COALESCE(a.account_code::text, l.account_code::text, ''))" if has_account_id else "TRIM(COALESCE(l.account_code::text, ''))"
-        project_select = "COALESCE(l.project_id, p.project_id, 0) AS project_id" if has_project else "COALESCE(p.project_id, 0) AS project_id"
-        project_join = "LEFT JOIN finance.projects pr ON pr.id = COALESCE(l.project_id, p.project_id)" if has_project else "LEFT JOIN finance.projects pr ON pr.id = p.project_id"
         detail_select = "COALESCE(l.description, '') AS detail" if has_desc else "'' AS detail"
 
         query = f"""
@@ -801,14 +770,11 @@ class AdjustmentJournalEntryScreen:
                    COALESCE(l.property_id, 0) AS property_id,
                    COALESCE(p.property_name, '') AS property_name,
                    COALESCE(l.vendor_id, 0) AS vendor_id,
-                   COALESCE(v.vendor_name, '') AS vendor_name,
-                   {project_select},
-                   COALESCE(pr.project_name, '') AS project_name
+                   COALESCE(v.vendor_name, '') AS vendor_name
             FROM finance.ledger l
             {account_join}
             LEFT JOIN finance.properties p ON p.id = l.property_id
             LEFT JOIN finance.vendors v ON v.id = l.vendor_id
-            {project_join}
             WHERE l.voucher_id = %s
             ORDER BY l.id
         """
@@ -826,7 +792,6 @@ class AdjustmentJournalEntryScreen:
                     "credit": float(r[5] or 0),
                     "property_id": r[7] or None,
                     "vendor_id": r[9] or None,
-                    "project_id": r[11] or None,
                 }
             )
         return lines
@@ -859,7 +824,6 @@ class AdjustmentJournalEntryScreen:
             acc_text = self._find_account_text(raw.get("account_id"), raw.get("account_code"))
             prop_text = self._find_combo_text(self.property_data, raw.get("property_id"))
             ven_text = self._find_combo_text(self.vendor_data, raw.get("vendor_id"))
-            proj_text = self._find_combo_text(self.project_data, raw.get("project_id"))
 
             acc_payload = self.account_data.get(acc_text, {"id": raw.get("account_id"), "code": raw.get("account_code", ""), "name": raw.get("account_name", "")})
 
@@ -877,9 +841,6 @@ class AdjustmentJournalEntryScreen:
                 "vendor_id": raw.get("vendor_id"),
                 "vendor_name": "",
                 "vendor_text": ven_text,
-                "project_id": raw.get("project_id"),
-                "project_name": "",
-                "project_text": proj_text,
             }
 
             iid = self.tree.insert("", "end", values=self._format_line_values(line))

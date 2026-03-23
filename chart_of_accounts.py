@@ -3,6 +3,7 @@ from tkinter import messagebox
 import ttkbootstrap as ttk
 # تأكد من وجود ملف db_connection.py في نفس مسار المشروع
 from db_connection import get_connection
+from combobox_helper import bind_searchable_combobox, set_combobox_values
 
 
 class ChartOfAccountsScreen:
@@ -121,16 +122,18 @@ class ChartOfAccountsScreen:
             self.form_container,
             "نوع الحساب :",
             widget_type="combo",
-            values=["رئيسي", "فرعي", "تحليلي"],
             state="readonly",
         )
         self.combo_nature = self._create_styled_field(
             self.form_container,
             "طبيعة الحساب :",
             widget_type="combo",
-            values=["مدين", "دائن"],
             state="readonly",
         )
+        set_combobox_values(self.combo_type, ["رئيسي", "فرعي", "تحليلي"])
+        set_combobox_values(self.combo_nature, ["مدين", "دائن"])
+        bind_searchable_combobox(self.combo_type)
+        bind_searchable_combobox(self.combo_nature)
 
         ttk.Separator(self.form_container, orient="horizontal", style="App.Accounts.Horizontal.TSeparator").pack(fill="x", pady=20)
         ttk.Label(self.form_container, text="الرصيد الحالي", style="App.Accounts.Value.TLabel").pack()

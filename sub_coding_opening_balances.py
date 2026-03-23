@@ -3,6 +3,7 @@ import tkinter as tk
 from tkinter import messagebox, simpledialog, ttk
 import ttkbootstrap as tb
 from db_connection import get_connection
+from combobox_helper import bind_searchable_combobox, set_combobox_values
 
 class SubCodingOpeningBalances:
     def __init__(self, master):
@@ -242,6 +243,7 @@ class SubCodingOpeningBalances:
         ttk.Label(form_card, text="اختر العقار (اختياري):", style="App.FormLabel.TLabel").grid(row=5, column=0, sticky="e", pady=(8,2))
         self.v_plot_cb = ttk.Combobox(form_card, style="App.Field.TCombobox", state="readonly", justify="right", font=("Segoe UI", 12, "bold"))
         self.v_plot_cb.grid(row=6, column=0, sticky="ew", pady=(0,8))
+        bind_searchable_combobox(self.v_plot_cb)
 
         self.v_balance = self._create_label_entry(form_card, "رصيد افتتاحي (مدين):", 8)
         self.v_balance.insert(0, "0.00")
@@ -420,7 +422,7 @@ class SubCodingOpeningBalances:
             self._fill_tree(self.plot_tree, plot_display_rows, 5)
 
             # fill property combobox
-            self.v_plot_cb["values"] = [f"{r[0]} - {r[1]}" for r in self.plot_rows_cache]
+            set_combobox_values(self.v_plot_cb, [f"{r[0]} - {r[1]}" for r in self.plot_rows_cache])
             if self.v_plot_cb.get() not in self.v_plot_cb["values"]:
                 self.v_plot_cb.set("")
 
