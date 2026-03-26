@@ -8,7 +8,7 @@ from typing import Any, Dict, List, Sequence, Tuple
 import ttkbootstrap as tb
 
 from combobox_helper import bind_searchable_combobox, set_combobox_values
-from db_connection import get_connection
+from db_connection import get_connection, get_db_error_message
 
 
 # =========================================================
@@ -241,6 +241,7 @@ class ReportsScreen:
             "كشف حساب وارث": ("heirs", "كشف حساب وارث"),
             "ملخص وارث": ("heirs", "ملخص وارث"),
             "أرصدة الورثة": ("heirs", "أرصدة الورثة"),
+            "أرصدة الورثة او المجموعة": ("heirs", "أرصدة الورثة"),
             "توزيع الأرباح": ("heirs", "توزيع الأرباح"),
 
             "كشف حساب عقار": ("properties", "كشف حساب عقار"),
@@ -630,7 +631,7 @@ class ReportsScreen:
                     cur.execute(query)
                     return list(cur.fetchall() or [])
         except Exception as exc:
-            messagebox.showerror("خطأ", f"تعذر تحميل بيانات {source_name}: {exc}")
+            messagebox.showerror("خطأ", get_db_error_message(exc, f"تعذر تحميل بيانات {source_name}"))
             return []
         finally:
             conn.close()
@@ -727,7 +728,7 @@ class ReportsScreen:
             "account_code": self._extract_prefix(state["account_var"].get()),
         }
 
-    def _ledger_filter_clause(self, filters, date_field="v.v_date"):
+    def _ledger_filter_clause(self, filters, date_field="v.v_date", property_field="l.property_id"):
         conditions = [f"{date_field} BETWEEN %s AND %s"]
         params = [filters["date_from"], filters["date_to"]]
 
@@ -735,7 +736,7 @@ class ReportsScreen:
             conditions.append("l.vendor_id = %s")
             params.append(filters["vendor_id"])
         if filters.get("property_id"):
-            conditions.append("l.property_id = %s")
+            conditions.append(f"{property_field} = %s")
             params.append(filters["property_id"])
         if filters.get("account_code"):
             conditions.append("l.account_code = %s")
@@ -756,7 +757,7 @@ class ReportsScreen:
                     columns = [desc[0] for desc in cur.description] if cur.description else []
             return columns, rows
         except Exception as exc:
-            raise RuntimeError(f"خطأ في قاعدة البيانات: {exc}") from exc
+            raise RuntimeError(get_db_error_message(exc, "خطأ في قاعدة البيانات")) from exc
         finally:
             conn.close()
 
@@ -783,7 +784,7 @@ class ReportsScreen:
         return {
             "total_debit": total_debit,
             "total_credit": total_credit,
-            "balance": total_credit - total_debit,
+            "balance": total_debit - total_credit,
         }
 
     def _update_tree(self, state, columns, rows):
@@ -910,7 +911,7 @@ class ReportsScreen:
 
     # ---------- Heirs ----------
     def get_heir_statement(self, filters):
-        where_sql, params = self._ledger_filter_clause(filters)
+        where_sql, params = self._ledger_filter_clause(filters, property_field="vd.property_id")
         query = f"""
             SELECT
                 v.id AS voucher_id,
@@ -924,7 +925,7 @@ class ReportsScreen:
             FROM finance.ledger l
             JOIN finance.vouchers v ON v.id = l.voucher_id
             LEFT JOIN finance.vendors vd ON vd.id = l.vendor_id
-            LEFT JOIN finance.properties p ON p.id = l.property_id
+            LEFT JOIN finance.properties p ON p.id = vd.property_id
             LEFT JOIN finance.accounts a ON a.account_code = l.account_code
             WHERE {where_sql}
             ORDER BY v.v_date, v.id
@@ -932,13 +933,13 @@ class ReportsScreen:
         return self._run_report_query("كشف حساب وارث", query, params, filters)
 
     def get_heir_summary(self, filters):
-        where_sql, params = self._ledger_filter_clause(filters)
+        where_sql, params = self._ledger_filter_clause(filters, property_field="vd.property_id")
         query = f"""
             SELECT
                 COALESCE(vd.vendor_name, 'غير محدد') AS vendor_name,
                 SUM(COALESCE(l.debit, 0)) AS debit,
                 SUM(COALESCE(l.credit, 0)) AS credit,
-                SUM(COALESCE(l.credit, 0) - COALESCE(l.debit, 0)) AS balance
+                SUM(COALESCE(l.debit, 0) - COALESCE(l.credit, 0)) AS balance
             FROM finance.ledger l
             JOIN finance.vouchers v ON v.id = l.voucher_id
             LEFT JOIN finance.vendors vd ON vd.id = l.vendor_id
@@ -949,13 +950,13 @@ class ReportsScreen:
         return self._run_report_query("ملخص وارث", query, params, filters)
 
     def get_heir_balances(self, filters):
-        where_sql, params = self._ledger_filter_clause(filters)
+        where_sql, params = self._ledger_filter_clause(filters, property_field="vd.property_id")
         query = f"""
             SELECT
                 COALESCE(vd.vendor_name, 'غير محدد') AS vendor_name,
                 SUM(COALESCE(l.debit, 0)) AS debit,
                 SUM(COALESCE(l.credit, 0)) AS credit,
-                SUM(COALESCE(l.credit, 0) - COALESCE(l.debit, 0)) AS balance
+                SUM(COALESCE(l.debit, 0) - COALESCE(l.credit, 0)) AS balance
             FROM finance.ledger l
             JOIN finance.vouchers v ON v.id = l.voucher_id
             LEFT JOIN finance.vendors vd ON vd.id = l.vendor_id
@@ -1024,7 +1025,7 @@ class ReportsScreen:
             JOIN finance.vouchers v ON v.id = l.voucher_id
             LEFT JOIN finance.properties p ON p.id = l.property_id
             WHERE {where_sql}
-              AND v.v_type IN ('قبض', 'Receipt', 'income', 'إيراد')
+              AND v.v_type = 'قبض'
             GROUP BY p.property_name
             ORDER BY property_name
         """
@@ -1042,7 +1043,7 @@ class ReportsScreen:
             JOIN finance.vouchers v ON v.id = l.voucher_id
             LEFT JOIN finance.properties p ON p.id = l.property_id
             WHERE {where_sql}
-              AND v.v_type IN ('صرف', 'Payment', 'expense', 'مصروف')
+              AND v.v_type = 'صرف'
             GROUP BY p.property_name
             ORDER BY property_name
         """
@@ -1080,7 +1081,7 @@ class ReportsScreen:
             JOIN finance.ledger l ON l.voucher_id = v.id
             LEFT JOIN finance.properties p ON p.id = l.property_id
             WHERE {where_sql}
-              AND v.v_type IN ('صرف', 'Payment', 'expense', 'مصروف')
+              AND v.v_type = 'صرف'
             GROUP BY v.id, v.v_date, v.description, p.property_name
             ORDER BY v.v_date, v.id
         """
@@ -1100,7 +1101,7 @@ class ReportsScreen:
             JOIN finance.ledger l ON l.voucher_id = v.id
             LEFT JOIN finance.properties p ON p.id = l.property_id
             WHERE {where_sql}
-              AND v.v_type IN ('قبض', 'Receipt', 'income', 'إيراد')
+              AND v.v_type = 'قبض'
             GROUP BY v.id, v.v_date, v.description, p.property_name
             ORDER BY v.v_date, v.id
         """

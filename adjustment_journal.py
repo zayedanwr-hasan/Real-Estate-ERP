@@ -4,12 +4,12 @@ from datetime import datetime
 import ttkbootstrap as ttk
 from ttkbootstrap.constants import END
 
-from db_connection import get_connection
+from db_connection import get_connection, get_db_error_message
 from combobox_helper import bind_searchable_combobox, set_combobox_values
 
 
 class AdjustmentJournalEntryScreen:
-    FIXED_VOUCHER_TYPE = "Adjustment Entry (قيد تسوية)"
+    FIXED_VOUCHER_TYPE = "قيد"
 
     def __init__(self, master):
         self.master = master
@@ -398,10 +398,7 @@ class AdjustmentJournalEntryScreen:
             return "تلقائي"
         try:
             cur = conn.cursor()
-            if self._schema_has_column(cur, "vouchers", "id"):
-                cur.execute("SELECT COALESCE(MAX(id), 0) + 1 FROM finance.vouchers")
-                return str(cur.fetchone()[0])
-            cur.execute("SELECT COALESCE(MAX(voucher_id), 0) + 1 FROM finance.vouchers")
+            cur.execute("SELECT COALESCE(MAX(id), 0) + 1 FROM finance.vouchers")
             return str(cur.fetchone()[0])
         except Exception:
             return "تلقائي"
@@ -600,15 +597,8 @@ class AdjustmentJournalEntryScreen:
         v_date = self.voucher_date_var.get().strip()
         desc = self.txt_general_desc.get("1.0", END).strip()
 
-        if self._schema_has_column(cur, "vouchers", "id") and self._schema_has_column(cur, "vouchers", "v_type"):
-            cur.execute(
-                "INSERT INTO finance.vouchers (v_type, v_date, description) VALUES (%s, %s, %s) RETURNING id",
-                (self.FIXED_VOUCHER_TYPE, v_date, desc),
-            )
-            return cur.fetchone()[0]
-
         cur.execute(
-            "INSERT INTO finance.vouchers (type, date, description) VALUES (%s, %s, %s) RETURNING voucher_id",
+            "INSERT INTO finance.vouchers (v_type, v_date, description) VALUES (%s, %s, %s) RETURNING id",
             (self.FIXED_VOUCHER_TYPE, v_date, desc),
         )
         return cur.fetchone()[0]
@@ -673,7 +663,7 @@ class AdjustmentJournalEntryScreen:
             messagebox.showinfo("نجاح", "تم حفظ قيد التسوية بنجاح")
         except Exception as e:
             conn.rollback()
-            messagebox.showerror("خطأ", str(e))
+            messagebox.showerror("خطأ", get_db_error_message(e, "تعذر حفظ قيد التسوية"))
         finally:
             conn.close()
 
@@ -695,16 +685,10 @@ class AdjustmentJournalEntryScreen:
             v_date = self.voucher_date_var.get().strip()
             desc = self.txt_general_desc.get("1.0", END).strip()
 
-            if self._schema_has_column(cur, "vouchers", "v_type"):
-                cur.execute(
-                    "UPDATE finance.vouchers SET v_type=%s, v_date=%s, description=%s WHERE id=%s",
-                    (self.FIXED_VOUCHER_TYPE, v_date, desc, self.current_voucher_id),
-                )
-            else:
-                cur.execute(
-                    "UPDATE finance.vouchers SET type=%s, date=%s, description=%s WHERE voucher_id=%s",
-                    (self.FIXED_VOUCHER_TYPE, v_date, desc, self.current_voucher_id),
-                )
+            cur.execute(
+                "UPDATE finance.vouchers SET v_type=%s, v_date=%s, description=%s WHERE id=%s",
+                (self.FIXED_VOUCHER_TYPE, v_date, desc, self.current_voucher_id),
+            )
 
             cur.execute("DELETE FROM finance.ledger WHERE voucher_id=%s", (self.current_voucher_id,))
             for line in self.entry_lines:
@@ -716,7 +700,7 @@ class AdjustmentJournalEntryScreen:
             messagebox.showinfo("نجاح", "تم تعديل قيد التسوية بنجاح")
         except Exception as e:
             conn.rollback()
-            messagebox.showerror("خطأ", str(e))
+            messagebox.showerror("خطأ", get_db_error_message(e, "تعذر تعديل قيد التسوية"))
         finally:
             conn.close()
 
@@ -740,14 +724,14 @@ class AdjustmentJournalEntryScreen:
             if self._schema_has_column(cur, "vouchers", "id"):
                 cur.execute("DELETE FROM finance.vouchers WHERE id=%s", (self.current_voucher_id,))
             else:
-                cur.execute("DELETE FROM finance.vouchers WHERE voucher_id=%s", (self.current_voucher_id,))
+                cur.execute("DELETE FROM finance.vouchers WHERE id=%s", (self.current_voucher_id,))
 
             conn.commit()
             messagebox.showinfo("نجاح", "تم حذف السند")
             self._reset_and_new()
         except Exception as e:
             conn.rollback()
-            messagebox.showerror("خطأ", str(e))
+            messagebox.showerror("خطأ", get_db_error_message(e, "تعذر حذف قيد التسوية"))
         finally:
             conn.close()
 
@@ -864,10 +848,7 @@ class AdjustmentJournalEntryScreen:
 
         try:
             cur = conn.cursor()
-            if self._schema_has_column(cur, "vouchers", "id"):
-                cur.execute("SELECT id, v_date, COALESCE(description, '') FROM finance.vouchers WHERE id=%s", (voucher_id,))
-            else:
-                cur.execute("SELECT voucher_id, date, COALESCE(description, '') FROM finance.vouchers WHERE voucher_id=%s", (voucher_id,))
+            cur.execute("SELECT id, v_date, COALESCE(description, '') FROM finance.vouchers WHERE id=%s", (voucher_id,))
 
             header = cur.fetchone()
             if not header:
@@ -886,7 +867,7 @@ class AdjustmentJournalEntryScreen:
             self._set_header_button_states()
             self._refresh_totals_status()
         except Exception as e:
-            messagebox.showerror("خطأ", str(e))
+            messagebox.showerror("خطأ", get_db_error_message(e, "تعذر جلب القيد"))
         finally:
             conn.close()
 

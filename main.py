@@ -1,3 +1,4 @@
+import importlib
 import ttkbootstrap as tb
 from tkinter import ttk, messagebox
 
@@ -8,10 +9,6 @@ from chart_of_accounts import ChartOfAccountsScreen
 from sub_coding_opening_balances import SubCodingOpeningBalances
 from adjustment_journal import AdjustmentJournalEntryScreen
 from reports_screen import ReportsScreen
-from settings_screen import SettingsScreen
-from auth_service import ensure_auth_schema, has_permission
-from login_dialog import LoginDialog
-from user_management_screen import UserManagementScreen
 
 
 class RealEstateApp:
@@ -21,12 +18,6 @@ class RealEstateApp:
         self.root.geometry("1200x800")
 
         self.current_user = None
-        try:
-            ensure_auth_schema()
-        except Exception as exc:
-            messagebox.showerror("خطأ", f"تعذر تهيئة نظام المستخدمين: {exc}")
-            self.root.destroy()
-            return
 
         # =========================
         # لوحة الألوان
@@ -44,7 +35,7 @@ class RealEstateApp:
         self._report_section_widgets = {}
 
         self.report_sections = {
-            "تقارير الورثة": ["كشف حساب وارث", "ملخص وارث", "أرصدة الورثة او المجموعة"],
+            "تقارير الورثة": ["كشف حساب وارث", "ملخص وارث", "أرصدة الورثة"],
             "تقارير العقارات": ["كشف حساب عقار", "تقرير الإيرادات", "تقرير المصروفات", "صافي الربح"],
             "تقارير السندات": ["سندات الصرف", "سندات القبض", "تقرير يومي"],
             "التقارير المالية": ["دفتر الأستاذ", "ميزان المراجعة", "قائمة الدخل", "التدفقات النقدية"],
@@ -305,63 +296,37 @@ class RealEstateApp:
         widgets["button"].configure(text=f"▼ {section_name}")
         self._expanded_report_section = section_name
 
-    def _show_login_dialog(self):
-        login = LoginDialog(self.root)
-        user = login.show()
-        if not user:
-            return False
-
-        self.current_user = user
-        user_title = f"المستخدم: {user.get('username', '')} ({user.get('role', '')})"
-        tb.Label(
-            self.sidebar,
-            text=user_title,
-            style="App.SidebarTitle.TLabel"
-        ).pack(pady=(4, 12))
-        return True
-
     def create_menu(self):
-        can_masters = has_permission(self.current_user, "masters")
-        can_vouchers = has_permission(self.current_user, "vouchers")
-        can_reports = has_permission(self.current_user, "reports")
-        can_settings = has_permission(self.current_user, "settings")
-        can_users = has_permission(self.current_user, "users")
+        self._create_nav_button(self.sidebar, "🏢 إدارة العقارات", self.open_properties)
+        ttk.Separator(self.sidebar).pack(fill="x", padx=20, pady=3)
 
-        if can_masters:
-            self._create_nav_button(self.sidebar, "🏢 إدارة العقارات", self.open_properties)
-            ttk.Separator(self.sidebar).pack(fill="x", padx=20, pady=3)
+        self._create_nav_button(self.sidebar, "📁 دليل الحسابات", self.open_accounts)
+        ttk.Separator(self.sidebar).pack(fill="x", padx=20, pady=3)
 
-            self._create_nav_button(self.sidebar, "📁 دليل الحسابات", self.open_accounts)
-            ttk.Separator(self.sidebar).pack(fill="x", padx=20, pady=3)
+        self._create_nav_button(self.sidebar, "🔗 الترميز الفرعي", self.open_sub_coding)
+        ttk.Separator(self.sidebar).pack(fill="x", padx=20, pady=3)
 
-            self._create_nav_button(self.sidebar, "🔗 الترميز الفرعي", self.open_sub_coding)
-            ttk.Separator(self.sidebar).pack(fill="x", padx=20, pady=3)
+        self._create_nav_button(self.sidebar, "📤 سند صرف نقدي", self.open_payment_voucher)
+        ttk.Separator(self.sidebar).pack(fill="x", padx=20, pady=3)
 
-        if can_vouchers:
-            self._create_nav_button(self.sidebar, "📤 سند صرف نقدي", self.open_payment_voucher)
-            ttk.Separator(self.sidebar).pack(fill="x", padx=20, pady=3)
+        self._create_nav_button(self.sidebar, "📥 سند قبض نقدي", self.open_receipt_voucher)
+        ttk.Separator(self.sidebar).pack(fill="x", padx=20, pady=3)
 
-            self._create_nav_button(self.sidebar, "📥 سند قبض نقدي", self.open_receipt_voucher)
-            ttk.Separator(self.sidebar).pack(fill="x", padx=20, pady=3)
+        self._create_nav_button(self.sidebar, "🧾 قيد تسوية", self.open_adjustment_journal)
+        ttk.Separator(self.sidebar).pack(fill="x", padx=20, pady=3)
 
-            self._create_nav_button(self.sidebar, "🧾 قيد تسوية", self.open_adjustment_journal)
-            ttk.Separator(self.sidebar).pack(fill="x", padx=20, pady=3)
+        self._build_reports_accordion(self.sidebar)
+        self._toggle_reports_root(force_expand=True)
+        ttk.Separator(self.sidebar).pack(fill="x", padx=20, pady=3)
 
-        if can_reports:
-            self._build_reports_accordion(self.sidebar)
-            # Show report main sections by default (children stay collapsed).
-            self._toggle_reports_root(force_expand=True)
-            ttk.Separator(self.sidebar).pack(fill="x", padx=20, pady=3)
-
-        if can_settings:
-            self._create_nav_button(self.sidebar, "⚙️ الإعدادات", self.open_settings)
-            ttk.Separator(self.sidebar).pack(fill="x", padx=20, pady=3)
-
-        if can_users:
-            self._create_nav_button(self.sidebar, "👥 المستخدمون والصلاحيات", self.open_user_management)
-            ttk.Separator(self.sidebar).pack(fill="x", padx=20, pady=3)
+        self._create_nav_button(self.sidebar, "⚙️ الإعدادات", self.open_settings)
+        ttk.Separator(self.sidebar).pack(fill="x", padx=20, pady=3)
 
         self._create_nav_button(self.sidebar, "🚪 خروج", self.root.quit)
+
+    def _show_login_dialog(self):
+        # Legacy hook kept to avoid breaking startup flow when auth is disabled.
+        return True
 
     def clear_display_area(self):
         for widget in self.display_area.winfo_children():
@@ -416,23 +381,20 @@ class RealEstateApp:
         self.current_page = ReportsScreen(self.display_area)
 
     def open_settings(self):
-        if not has_permission(self.current_user, "settings"):
-            messagebox.showwarning("تنبيه", "ليس لديك صلاحية لفتح شاشة الإعدادات")
-            return
         self.clear_display_area()
-        self.current_page = SettingsScreen(self.display_area, current_user=self.current_user)
+        try:
+            settings_module = importlib.import_module("settings_screen")
+            settings_cls = getattr(settings_module, "SettingsScreen")
+        except Exception:
+            messagebox.showinfo("تنبيه", "شاشة الإعدادات غير متوفرة حالياً")
+            return
+        self.current_page = settings_cls(self.display_area, current_user=self.current_user)
 
     def open_report(self, report_name):
         self.clear_display_area()
         self.current_page = ReportsScreen(self.display_area)
         self.current_page.open_report(report_name)
 
-    def open_user_management(self):
-        if not has_permission(self.current_user, "users"):
-            messagebox.showwarning("تنبيه", "ليس لديك صلاحية لفتح شاشة المستخدمين")
-            return
-        self.clear_display_area()
-        self.current_page = UserManagementScreen(self.display_area, current_user=self.current_user)
 
     def dummy_msg(self):
         messagebox.showinfo("الإعدادات", "خاص بالمدير")
