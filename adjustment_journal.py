@@ -6,6 +6,7 @@ from ttkbootstrap.constants import END
 
 from db_connection import get_connection, get_db_error_message
 from combobox_helper import bind_searchable_combobox, set_combobox_values
+from app_constants import SYSTEM_NAME
 
 
 class AdjustmentJournalEntryScreen:
@@ -141,7 +142,7 @@ class AdjustmentJournalEntryScreen:
         header = ttk.Frame(parent, style="Adj.Header.TFrame", height=68)
         header.pack(fill="x", side="top")
 
-        ttk.Label(header, text="قيد تسوية احترافي - Al-Sofi ERP", style="Adj.Header.TLabel").pack(side="right", padx=30, pady=15)
+        ttk.Label(header, text=f"قيد تسوية احترافي - {SYSTEM_NAME}", style="Adj.Header.TLabel").pack(side="right", padx=30, pady=15)
 
         btn_group = ttk.Frame(header, style="Adj.Header.TFrame")
         btn_group.pack(side="left", padx=20)

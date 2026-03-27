@@ -1,9 +1,12 @@
 # subcoding_opening_balances.py
+import logging
 import tkinter as tk
 from tkinter import messagebox, simpledialog, ttk
 import ttkbootstrap as tb
 from db_connection import get_connection, get_db_error_message
 from combobox_helper import bind_searchable_combobox, set_combobox_values
+
+logger = logging.getLogger(__name__)
 
 class SubCodingOpeningBalances:
     def __init__(self, master):
@@ -502,7 +505,93 @@ class SubCodingOpeningBalances:
         if parsed is None:
             messagebox.showerror("خطأ", f"{field_label} يجب أن يكون رقمًا صحيحًا")
             return None
+        if parsed < 0:
+            messagebox.showerror("خطأ", f"{field_label} لا يمكن أن يكون سالبًا")
+            return None
         return parsed
+
+    def _show_db_error(self, error, prefix="حدث خطأ في قاعدة البيانات"):
+        formatted = get_db_error_message(error, prefix)
+        logger.error(formatted)
+        messagebox.showerror("خطأ", formatted)
+
+    def execute_query(self, query, params=None, fetch=False, fetchone=False, error_prefix="فشل تنفيذ العملية", show_error=True, raise_error=False):
+        conn = get_connection()
+        if not conn:
+            if show_error:
+                messagebox.showerror("خطأ", "تعذر الاتصال بقاعدة البيانات")
+            return None
+
+        cur = None
+        try:
+            cur = conn.cursor()
+            cur.execute(query, params or ())
+
+            if fetchone:
+                result = cur.fetchone()
+            elif fetch:
+                result = cur.fetchall()
+            else:
+                result = True
+
+            conn.commit()
+            return result
+        except Exception as error:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+
+            if show_error:
+                self._show_db_error(error, error_prefix)
+            if raise_error:
+                raise
+            return None
+        finally:
+            try:
+                if cur is not None:
+                    cur.close()
+            except Exception:
+                pass
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+    def execute_transaction(self, operation, error_prefix="فشل تنفيذ العملية", show_error=True, raise_error=False):
+        conn = get_connection()
+        if not conn:
+            if show_error:
+                messagebox.showerror("خطأ", "تعذر الاتصال بقاعدة البيانات")
+            return None
+
+        cur = None
+        try:
+            cur = conn.cursor()
+            result = operation(cur)
+            conn.commit()
+            return result
+        except Exception as error:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+
+            if show_error:
+                self._show_db_error(error, error_prefix)
+            if raise_error:
+                raise
+            return None
+        finally:
+            try:
+                if cur is not None:
+                    cur.close()
+            except Exception:
+                pass
+            try:
+                conn.close()
+            except Exception:
+                pass
 
     def _validate_opening_v_type(self, v_type):
         # Guard against CHECK constraint failures on finance.vouchers.v_type.
@@ -515,14 +604,21 @@ class SubCodingOpeningBalances:
         return True
 
     def _refresh_all_data(self):
-        conn = get_connection()
-        if not conn:
-            messagebox.showerror("خطأ", "تعذر الاتصال بقاعدة البيانات")
-            return
+        errors = []
+
+        # Always reset UI containers first so a previous failed query cannot leave stale state.
+        self.plot_rows_cache = []
+        self.vendor_rows_cache = []
+        self.plot_map = {}
+        self.vendor_map = {}
+        self._show_empty_state(self.plot_tree, 5)
+        self._show_empty_state(self.vendor_tree, 5)
+        if hasattr(self, "v_plot_cb"):
+            set_combobox_values(self.v_plot_cb, [])
+            self.v_plot_cb.set("")
+
         try:
-            cur = conn.cursor()
-            # properties
-            cur.execute(
+            plot_rows = self.execute_query(
                 """
                 SELECT id,
                        property_name,
@@ -531,10 +627,15 @@ class SubCodingOpeningBalances:
                        COALESCE(location, '') AS location
                 FROM finance.properties
                 ORDER BY id DESC
-                """
-            )
-            self.plot_rows_cache = cur.fetchall()
-            self.plot_map = {int(r[0]): r for r in self.plot_rows_cache}
+                """,
+                fetch=True,
+                error_prefix="تعذر تحميل بيانات العقارات",
+                show_error=False,
+                raise_error=True,
+            ) or []
+
+            self.plot_rows_cache = plot_rows
+            self.plot_map = {int(r[0]): r for r in self.plot_rows_cache if r and r[0] is not None}
             plot_display_rows = [
                 (
                     r[0],
@@ -547,21 +648,30 @@ class SubCodingOpeningBalances:
             ]
             self._fill_tree(self.plot_tree, plot_display_rows, 5)
 
-            # fill property combobox
             set_combobox_values(self.v_plot_cb, [f"{r[0]} - {r[1]}" for r in self.plot_rows_cache])
             if self.v_plot_cb.get() not in self.v_plot_cb["values"]:
                 self.v_plot_cb.set("")
+        except Exception as error:
+            errors.append(get_db_error_message(error, "تعذر تحميل بيانات العقارات"))
 
-            # load vendor group choices from chart of accounts (do not block data refresh on failure)
-            try:
+        try:
+            def _load_groups(cur):
                 self._load_vendor_group_options(cur)
-            except Exception:
-                # Keep vendor data loading even if group suggestions cannot be built.
-                if hasattr(self, "v_group_cb"):
-                    set_combobox_values(self.v_group_cb, [])
+                return True
 
-            # vendors + balances (property comes from vendors.property_id, not ledger)
-            cur.execute(
+            self.execute_transaction(
+                _load_groups,
+                error_prefix="تعذر تحميل خيارات المجموعات",
+                show_error=False,
+                raise_error=True,
+            )
+        except Exception as error:
+            errors.append(get_db_error_message(error, "تعذر تحميل خيارات المجموعات"))
+            if hasattr(self, "v_group_cb"):
+                set_combobox_values(self.v_group_cb, [])
+
+        try:
+            vendor_rows_raw = self.execute_query(
                 """
                 SELECT v.id,
                        v.vendor_name,
@@ -588,11 +698,13 @@ class SubCodingOpeningBalances:
                 ORDER BY v.vendor_name
                 """,
                 (self.allowed_opening_v_type,),
-            )
-            vendor_rows_raw = cur.fetchall()
-            # vendor_rows_cache arranged to match columns shown earlier
+                fetch=True,
+                error_prefix="تعذر تحميل بيانات الورثة",
+                show_error=False,
+                raise_error=True,
+            ) or []
+
             self.vendor_rows_cache = [(r[0], r[1], r[2], r[3], r[4]) for r in vendor_rows_raw]
-            # vendor_map holds details used when selecting
             self.vendor_map = {
                 int(r[0]): {
                     "id": int(r[0]),
@@ -604,19 +716,19 @@ class SubCodingOpeningBalances:
                     "opening_account_code": r[6] or self.default_vendor_account_code,
                 }
                 for r in vendor_rows_raw
+                if r and r[0] is not None
             }
             vendor_display_rows = [
                 (r[0], r[1], r[2], r[3], self._format_amount(r[4] if r[4] is not None else 0))
                 for r in self.vendor_rows_cache
             ]
             self._fill_tree(self.vendor_tree, vendor_display_rows, 5)
-        except Exception as e:
-            messagebox.showerror("خطأ", get_db_error_message(e, "تعذر تحميل البيانات"))
-        finally:
-            try:
-                conn.close()
-            except Exception:
-                pass
+        except Exception as error:
+            errors.append(get_db_error_message(error, "تعذر تحميل بيانات الورثة"))
+
+        if errors:
+            logger.error("Partial refresh errors: %s", " | ".join(errors))
+            messagebox.showwarning("تنبيه", "تم تحميل جزء من البيانات مع وجود أخطاء.\n\n" + "\n\n".join(errors[:2]))
 
     # ---------------------------
     # CRUD: Save / Edit / Delete
@@ -636,26 +748,18 @@ class SubCodingOpeningBalances:
             if cost_val is None:
                 return
 
-        # المساحة الآن حقل نصي حر (مثل: متر/لبنة/ك) لذا لا نطبّق عليه تحويل رقمي.
         area_val = area if area else None
-        conn = get_connection()
-        if not conn:
-            return messagebox.showerror("خطأ", "تعذر الاتصال بقاعدة البيانات")
-        cur = conn.cursor()
-        try:
-            cur.execute(
-                "INSERT INTO finance.properties (property_name, total_cost, purchase_price, location) VALUES (%s, %s, %s, %s)",
-                (name, cost_val, area_val, loc),
-            )
-            conn.commit()
-            messagebox.showinfo("نجاح", "تم حفظ العقار")
-            self._clear_plot_form()
-            self._refresh_all_data()
-        except Exception as e:
-            conn.rollback()
-            messagebox.showerror("خطأ", get_db_error_message(e, "فشل حفظ بيانات العقار"))
-        finally:
-            conn.close()
+        ok = self.execute_query(
+            "INSERT INTO finance.properties (property_name, total_cost, purchase_price, location) VALUES (%s, %s, %s, %s)",
+            (name, cost_val, area_val, loc),
+            error_prefix="فشل حفظ بيانات العقار",
+        )
+        if not ok:
+            return
+
+        messagebox.showinfo("نجاح", "تم حفظ العقار")
+        self._clear_plot_form()
+        self._refresh_all_data()
 
     def _get_required_property_id(self):
         plot_info = self.v_plot_cb.get().strip()
@@ -685,12 +789,9 @@ class SubCodingOpeningBalances:
         if property_id is None:
             return
 
-        conn = get_connection()
-        if not conn:
-            return messagebox.showerror("خطأ", "تعذر الاتصال بقاعدة البيانات")
-        cur = conn.cursor()
-        try:
-            selected_account_code = self._get_selected_vendor_account_code()
+        selected_account_code = self._get_selected_vendor_account_code()
+
+        def _save_vendor_tx(cur):
             credit_account_code = self._resolve_opening_credit_account_code(cur)
             cur.execute(
                 "INSERT INTO finance.vendors (vendor_name, group_name, property_id) VALUES (%s, %s, %s) RETURNING id",
@@ -699,10 +800,8 @@ class SubCodingOpeningBalances:
             v_id = cur.fetchone()[0]
 
             if bal > 0:
-                # Validate fixed opening voucher type before INSERT to avoid CHECK constraint violations.
                 if not self._validate_opening_v_type(self.allowed_opening_v_type):
-                    conn.rollback()
-                    return
+                    raise Exception("قيمة نوع القيد غير صالحة")
 
                 cur.execute(
                     "INSERT INTO finance.vouchers (v_type, v_date, description) VALUES (%s, CURRENT_DATE, %s) RETURNING id",
@@ -710,26 +809,24 @@ class SubCodingOpeningBalances:
                 )
                 voc_id = cur.fetchone()[0]
 
-                # debit to vendor (selected account)
                 cur.execute(
                     "INSERT INTO finance.ledger (voucher_id, account_code, vendor_id, property_id, debit) VALUES (%s, %s, %s, %s, %s)",
                     (voc_id, selected_account_code, v_id, property_id, bal),
                 )
-                # balancing credit (account 3999). keep vendor_id NULL for general ledger credit line (depends on your schema)
                 cur.execute(
                     "INSERT INTO finance.ledger (voucher_id, account_code, credit) VALUES (%s, %s, %s)",
                     (voc_id, credit_account_code, bal),
                 )
 
-            conn.commit()
-            messagebox.showinfo("نجاح", "تم الحفظ")
-            self._clear_vendor_form()
-            self._refresh_all_data()
-        except Exception as e:
-            conn.rollback()
-            messagebox.showerror("خطأ", get_db_error_message(e, "فشل حفظ بيانات الوارث"))
-        finally:
-            conn.close()
+            return v_id
+
+        saved_vendor_id = self.execute_transaction(_save_vendor_tx, error_prefix="فشل حفظ بيانات الوارث")
+        if not saved_vendor_id:
+            return
+
+        messagebox.showinfo("نجاح", "تم الحفظ")
+        self._clear_vendor_form()
+        self._refresh_all_data()
 
     # ---------------------------
     # Actions - wrappers
@@ -885,26 +982,18 @@ class SubCodingOpeningBalances:
             if cost_val is None:
                 return
 
-        # المساحة حقل نصي حر.
         area_val = area if area else None
-        conn = get_connection()
-        if not conn:
-            return messagebox.showerror("خطأ", "تعذر الاتصال بقاعدة البيانات")
-        cur = conn.cursor()
-        try:
-            cur.execute(
-                "UPDATE finance.properties SET property_name=%s, total_cost=%s, purchase_price=%s, location=%s WHERE id=%s",
-                (name, cost_val, area_val, loc, self.selected_plot_id),
-            )
-            conn.commit()
-            messagebox.showinfo("نجاح", "تم تعديل بيانات العقار")
-            self._clear_plot_form()
-            self._refresh_all_data()
-        except Exception as e:
-            conn.rollback()
-            messagebox.showerror("خطأ", get_db_error_message(e, "فشل حفظ بيانات العقار"))
-        finally:
-            conn.close()
+        ok = self.execute_query(
+            "UPDATE finance.properties SET property_name=%s, total_cost=%s, purchase_price=%s, location=%s WHERE id=%s",
+            (name, cost_val, area_val, loc, self.selected_plot_id),
+            error_prefix="فشل حفظ بيانات العقار",
+        )
+        if not ok:
+            return
+
+        messagebox.showinfo("نجاح", "تم تعديل بيانات العقار")
+        self._clear_plot_form()
+        self._refresh_all_data()
 
     def _edit_vendor(self):
         if not self.selected_vendor_id:
@@ -926,19 +1015,15 @@ class SubCodingOpeningBalances:
         if property_id is None:
             return
 
-        conn = get_connection()
-        if not conn:
-            return messagebox.showerror("خطأ", "تعذر الاتصال بقاعدة البيانات")
-        cur = conn.cursor()
-        try:
-            selected_account_code = self._get_selected_vendor_account_code()
+        selected_account_code = self._get_selected_vendor_account_code()
+
+        def _edit_vendor_tx(cur):
             credit_account_code = self._resolve_opening_credit_account_code(cur)
             cur.execute(
                 "UPDATE finance.vendors SET vendor_name=%s, group_name=%s, property_id=%s WHERE id=%s",
                 (name, group, property_id, self.selected_vendor_id),
             )
 
-            # Upsert opening voucher lines: update if exists, otherwise create when bal > 0.
             cur.execute(
                 """
                 SELECT l.voucher_id
@@ -957,8 +1042,7 @@ class SubCodingOpeningBalances:
                 voucher_id = opening_voucher[0]
 
                 if not self._validate_opening_v_type(self.allowed_opening_v_type):
-                    conn.rollback()
-                    return
+                    raise Exception("قيمة نوع القيد غير صالحة")
 
                 cur.execute(
                     "UPDATE finance.ledger SET account_code=%s, property_id=%s, debit=%s WHERE voucher_id=%s AND vendor_id=%s AND COALESCE(debit, 0) > 0",
@@ -975,8 +1059,7 @@ class SubCodingOpeningBalances:
                     raise Exception("تعذر تحديث قيد الرصيد الافتتاحي (سطر الدائن غير موجود).")
             elif bal > 0:
                 if not self._validate_opening_v_type(self.allowed_opening_v_type):
-                    conn.rollback()
-                    return
+                    raise Exception("قيمة نوع القيد غير صالحة")
 
                 cur.execute(
                     "INSERT INTO finance.vouchers (v_type, v_date, description) VALUES (%s, CURRENT_DATE, %s) RETURNING id",
@@ -992,52 +1075,54 @@ class SubCodingOpeningBalances:
                     "INSERT INTO finance.ledger (voucher_id, account_code, credit) VALUES (%s, %s, %s)",
                     (voucher_id, credit_account_code, bal),
                 )
+            return True
 
-            conn.commit()
-            messagebox.showinfo("نجاح", "تم تعديل بيانات الوارث")
-            self._clear_vendor_form()
-            self._refresh_all_data()
-        except Exception as e:
-            conn.rollback()
-            messagebox.showerror("خطأ", get_db_error_message(e, "فشل تعديل بيانات الوارث"))
-        finally:
-            conn.close()
+        ok = self.execute_transaction(_edit_vendor_tx, error_prefix="فشل تعديل بيانات الوارث")
+        if not ok:
+            return
+
+        messagebox.showinfo("نجاح", "تم تعديل بيانات الوارث")
+        self._clear_vendor_form()
+        self._refresh_all_data()
 
     def _delete_plot(self):
         if not self.selected_plot_id:
             return messagebox.showwarning("تنبيه", "اختر عقارًا من الجدول أولاً")
         if not messagebox.askyesno("تأكيد", "هل أنت متأكد من حذف هذا العقار؟"):
             return
-        conn = get_connection()
-        if not conn:
-            return messagebox.showerror("خطأ", "تعذر الاتصال بقاعدة البيانات")
-        cur = conn.cursor()
-        try:
-            cur.execute("SELECT COUNT(*) FROM finance.ledger WHERE property_id=%s", (self.selected_plot_id,))
-            linked = cur.fetchone()[0]
-            if linked > 0:
-                return messagebox.showwarning("تنبيه", "لا يمكن حذف العقار لوجود قيود محاسبية مرتبطة به")
-            cur.execute("DELETE FROM finance.properties WHERE id=%s", (self.selected_plot_id,))
-            conn.commit()
-            messagebox.showinfo("نجاح", "تم حذف العقار")
-            self._clear_plot_form()
-            self._refresh_all_data()
-        except Exception as e:
-            conn.rollback()
-            messagebox.showerror("خطأ", get_db_error_message(e, "فشل حذف العقار"))
-        finally:
-            conn.close()
+
+        linked_row = self.execute_query(
+            "SELECT COUNT(*) FROM finance.ledger WHERE property_id=%s",
+            (self.selected_plot_id,),
+            fetchone=True,
+            error_prefix="فشل التحقق من ارتباطات العقار",
+        )
+        if linked_row is None:
+            return
+
+        linked = linked_row[0] if isinstance(linked_row, (tuple, list)) and linked_row else 0
+        if linked > 0:
+            return messagebox.showwarning("تنبيه", "لا يمكن حذف العقار لوجود قيود محاسبية مرتبطة به")
+
+        ok = self.execute_query(
+            "DELETE FROM finance.properties WHERE id=%s",
+            (self.selected_plot_id,),
+            error_prefix="فشل حذف العقار",
+        )
+        if not ok:
+            return
+
+        messagebox.showinfo("نجاح", "تم حذف العقار")
+        self._clear_plot_form()
+        self._refresh_all_data()
 
     def _delete_vendor(self):
         if not self.selected_vendor_id:
             return messagebox.showwarning("تنبيه", "اختر وارثًا من الجدول أولاً")
         if not messagebox.askyesno("تأكيد", "هل أنت متأكد من حذف هذا الوارث؟"):
             return
-        conn = get_connection()
-        if not conn:
-            return messagebox.showerror("خطأ", "تعذر الاتصال بقاعدة البيانات")
-        cur = conn.cursor()
-        try:
+
+        def _delete_vendor_tx(cur):
             cur.execute(
                 """
                 SELECT COUNT(*)
@@ -1050,7 +1135,7 @@ class SubCodingOpeningBalances:
             )
             has_non_opening_entries = cur.fetchone()[0]
             if has_non_opening_entries > 0:
-                return messagebox.showwarning("تنبيه", "لا يمكن حذف الوارث لوجود قيود حركة مرتبطة به")
+                return "blocked"
 
             cur.execute(
                 """
@@ -1068,15 +1153,17 @@ class SubCodingOpeningBalances:
                 cur.execute("DELETE FROM finance.vouchers WHERE id = ANY(%s)", (opening_vouchers,))
 
             cur.execute("DELETE FROM finance.vendors WHERE id=%s", (self.selected_vendor_id,))
-            conn.commit()
-            messagebox.showinfo("نجاح", "تم حذف الوارث")
-            self._clear_vendor_form()
-            self._refresh_all_data()
-        except Exception as e:
-            conn.rollback()
-            messagebox.showerror("خطأ", get_db_error_message(e, "فشل حذف الوارث"))
-        finally:
-            conn.close()
+            return "deleted"
+
+        result = self.execute_transaction(_delete_vendor_tx, error_prefix="فشل حذف الوارث")
+        if result is None:
+            return
+        if result == "blocked":
+            return messagebox.showwarning("تنبيه", "لا يمكن حذف الوارث لوجود قيود حركة مرتبطة به")
+
+        messagebox.showinfo("نجاح", "تم حذف الوارث")
+        self._clear_vendor_form()
+        self._refresh_all_data()
 
     # ---------------------------
     # UX helpers

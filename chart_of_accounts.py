@@ -4,6 +4,7 @@ import ttkbootstrap as ttk
 # تأكد من وجود ملف db_connection.py في نفس مسار المشروع
 from db_connection import get_connection
 from combobox_helper import bind_searchable_combobox, set_combobox_values
+from app_constants import SYSTEM_NAME
 
 
 class ChartOfAccountsScreen:
@@ -86,7 +87,7 @@ class ChartOfAccountsScreen:
         header = ttk.Frame(self.main_card, style="App.Accounts.Header.TFrame", height=68)
         header.pack(fill="x", side="top")
 
-        ttk.Label(header, text="دليل الحسابات العقاري - Al-Sofi ERP", style="App.Accounts.HeaderTitle.TLabel").pack(
+        ttk.Label(header, text=f"دليل الحسابات العقاري - {SYSTEM_NAME}", style="App.Accounts.HeaderTitle.TLabel").pack(
             side="right", padx=30, pady=15
         )
 
@@ -394,7 +395,7 @@ if __name__ == "__main__":
     import ttkbootstrap as tb
 
     root = tb.Window(themename="flatly")
-    root.title("Al-Sofi Real Estate ERP")
+    root.title(SYSTEM_NAME)
     root.geometry("1200x900")
     app = ChartOfAccountsScreen(root)
     root.mainloop()
