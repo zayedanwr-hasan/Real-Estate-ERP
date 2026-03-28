@@ -6,15 +6,17 @@ from properties_screen import PropertyScreen
 from payment_vouchers import PaymentVoucherScreen
 from receipt_vouchers import ReceiptVoucherScreen
 from chart_of_accounts import ChartOfAccountsScreen
-from sub_coding_opening_balances import SubCodingOpeningBalances
+from subcoding_opening_balances_refactored import SubCodingOpeningBalances
+from vendor_groups_screen import VendorGroupsScreen
 from adjustment_journal import AdjustmentJournalEntryScreen
 from reports_screen import ReportsScreen
+from app_constants import SYSTEM_NAME
 
 
 class RealEstateApp:
     def __init__(self, root: tb.Window):
         self.root = root
-        self.root.title("نظام محاسبي للمقاولات والعقارات - v2.0")
+        self.root.title(SYSTEM_NAME)
         self.root.geometry("1200x800")
 
         self.current_user = None
@@ -297,10 +299,13 @@ class RealEstateApp:
         self._expanded_report_section = section_name
 
     def create_menu(self):
-        self._create_nav_button(self.sidebar, "🏢 إدارة العقارات", self.open_properties)
+        self._create_nav_button(self.sidebar, "🏢 إدارة الأراضي", self.open_properties)
         ttk.Separator(self.sidebar).pack(fill="x", padx=20, pady=3)
 
         self._create_nav_button(self.sidebar, "📁 دليل الحسابات", self.open_accounts)
+        ttk.Separator(self.sidebar).pack(fill="x", padx=20, pady=3)
+
+        self._create_nav_button(self.sidebar, "🧩 مجموعات الموردين", self.open_vendor_groups)
         ttk.Separator(self.sidebar).pack(fill="x", padx=20, pady=3)
 
         self._create_nav_button(self.sidebar, "🔗 الترميز الفرعي", self.open_sub_coding)
@@ -371,6 +376,9 @@ class RealEstateApp:
         self.clear_display_area()
         self.current_page = SubCodingOpeningBalances(self.display_area)
 
+    def open_vendor_groups(self):
+        self.clear_display_area()
+        self.current_page = VendorGroupsScreen(self.display_area)
 
     def open_adjustment_journal(self):
         self.clear_display_area()

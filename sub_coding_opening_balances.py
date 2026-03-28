@@ -1,291 +1,620 @@
-# subcoding_opening_balances.py
-import logging
 import tkinter as tk
 from tkinter import messagebox, simpledialog, ttk
-import ttkbootstrap as tb
-from db_connection import get_connection, get_db_error_message
-from combobox_helper import bind_searchable_combobox, set_combobox_values
 
-logger = logging.getLogger(__name__)
+import ttkbootstrap as tb
+
+from combobox_helper import bind_searchable_combobox, set_combobox_values
+from db_connection import get_connection, get_db_error_message
+
 
 class SubCodingOpeningBalances:
     def __init__(self, master):
         self.master = master
-
-        # Enforced by finance.vouchers CHECK constraint.
-        self.allowed_opening_v_type = "رصيد افتتاحى"
-        self._balance_preview_guard = False
-
-        # Palette
         self.primary_color = "#2c3e50"
-        self.sidebar_color = "#34495e"
         self.accent_color = "#1abc9c"
-        self.text_color = "#ecf0f1"
         self.bg_color = "#f4f7f6"
 
-        # Action button colors (required per spec)
-        self.color_new = "#3498db"
-        self.color_save = "#27ae60"
-        self.color_edit = "#f1c40f"
-        self.color_delete = "#e74c3c"
-        self.color_search = "#8e44ad"
-        self.color_exit = "#e67e22"
-
-        # Fonts aligned with voucher screens
-        self.base_font = ("Segoe UI", 11)
-        self.bold_font = ("Segoe UI", 11, "bold")
-        self.title_font = ("Segoe UI", 20, "bold")
-
-        # state
-        self.selected_plot_id = None
+        self.selected_property_id = None
         self.selected_vendor_id = None
-        self.plot_rows_cache = []
-        self.vendor_rows_cache = []
-        self.plot_map = {}
-        self.vendor_map = {}
 
-        # Fixed opening account options for vendor balances (aligned with current chart of accounts).
-        self.vendor_account_options = [
-            ("21", "دائنون-ملاك أراضي"),
-            ("2101", "الورثة"),
-            ("2102", "المجموعات"),
-        ]
-        self.vendor_account_code_to_name = {code: name for code, name in self.vendor_account_options}
-        self.vendor_account_name_to_code = {name: code for code, name in self.vendor_account_options}
-        self.default_vendor_account_code = "2101"
+        self.group_display_to_id = {}
+        self.property_display_to_id = {}
 
-        # Group field options loaded from chart of accounts (2102 and its children).
-        self.vendor_group_options = []
-        self.vendor_group_display_to_name = {}
-        self.vendor_group_name_to_display = {}
-
-        # vars
-        self.summary_amount_var = tk.StringVar(value="0.00")
-        self.summary_words_var = tk.StringVar(value="فقط صفر")
-
-        # style + layout
         self._setup_styles()
         self._build_layout()
-        # initial data load
         self._refresh_all_data()
 
     def _setup_styles(self):
-        self.style = tb.Style(theme="flatly")  # base theme but we customize heavily
-
-        # Root frames and cards
-        self.style.configure("App.Root.TFrame", background=self.bg_color)
-        self.style.configure("App.Header.TFrame", background=self.primary_color)
-        self.style.configure("App.HeaderTitle.TLabel", background=self.primary_color, foreground="white", font=self.title_font, anchor="e")
-
-        self.style.configure("App.Card.TFrame", background="white", relief="solid", borderwidth=1, bordercolor="#d1d8e0")
-        self.style.configure("App.CardTitle.TLabel", background="white", foreground=self.primary_color, font=("Segoe UI", 13, "bold"), anchor="e")
-        self.style.configure("App.FormLabel.TLabel", background="white", foreground=self.primary_color, font=("Segoe UI", 12, "bold"), anchor="e", justify="right")
-        self.style.configure("App.Field.TEntry", fieldbackground="white", foreground=self.primary_color, font=("Segoe UI", 11))
-        self.style.configure("App.Field.TCombobox", fieldbackground="white", foreground=self.primary_color, font=("Segoe UI", 11))
-
-        # Summary box
-        self.style.configure("App.Summary.TFrame", background=self.bg_color, relief="flat")
-        self.style.configure("App.SummaryTitle.TLabel", background=self.bg_color, foreground=self.primary_color, font=("Segoe UI", 12, "bold"))
-        self.style.configure("App.SummaryAmount.TLabel", background=self.bg_color, foreground=self.color_delete, font=("Segoe UI", 24, "bold"))
-        self.style.configure("App.SummaryWords.TLabel", background=self.bg_color, foreground=self.sidebar_color, font=("Segoe UI", 14, "bold"))
-
-        # Buttons styles aligned with voucher screens.
-        self.style.configure("App.SubCoding.Primary.TButton", background=self.color_new, foreground="white", borderwidth=0, font=("Segoe UI", 11, "bold"), padding=(10, 6))
-        self.style.configure("App.SubCoding.Success.TButton", background=self.color_save, foreground="white", borderwidth=0, font=("Segoe UI", 11, "bold"), padding=(10, 6))
-        self.style.configure("App.SubCoding.Warning.TButton", background=self.color_edit, foreground="#2c3e50", borderwidth=0, font=("Segoe UI", 11, "bold"), padding=(10, 6))
-        self.style.configure("App.SubCoding.Danger.TButton", background=self.color_delete, foreground="white", borderwidth=0, font=("Segoe UI", 11, "bold"), padding=(10, 6))
-        self.style.configure("App.SubCoding.Info.TButton", background=self.color_search, foreground="white", borderwidth=0, font=("Segoe UI", 11, "bold"), padding=(10, 6))
-        self.style.configure("App.SubCoding.Exit.TButton", background=self.color_exit, foreground="white", borderwidth=0, font=("Segoe UI", 11, "bold"), padding=(10, 6))
-
-        for button_style in (
-            "App.SubCoding.Primary.TButton",
-            "App.SubCoding.Success.TButton",
-            "App.SubCoding.Warning.TButton",
-            "App.SubCoding.Danger.TButton",
-            "App.SubCoding.Info.TButton",
-            "App.SubCoding.Exit.TButton",
-        ):
-            self.style.map(
-                button_style,
-                background=[("active", self.accent_color), ("pressed", self.accent_color)],
-                foreground=[("active", "white"), ("pressed", "white")],
-            )
-
-        # Notebook aligned to the same modern ERP styling language.
-        self.style.configure("App.SubCoding.TNotebook", background=self.bg_color, borderwidth=0)
-        self.style.configure("App.SubCoding.TNotebook.Tab", font=("Segoe UI", 11, "bold"), padding=(14, 8), background=self.sidebar_color, foreground=self.text_color)
-        self.style.map(
-            "App.SubCoding.TNotebook.Tab",
-            background=[("selected", self.accent_color), ("active", self.accent_color)],
-            foreground=[("selected", "white"), ("active", "white")],
-        )
-
-        # Treeview (table) style
-        self.style.configure("App.Treeview", rowheight=30, font=self.base_font, background="white", fieldbackground="white", foreground=self.primary_color)
-        self.style.configure("App.Treeview.Heading", font=("Segoe UI", 11, "bold"), background=self.primary_color, foreground="white")
-        # selection color (single place)
-        self.style.map("App.Treeview", background=[("selected", self.accent_color)], foreground=[("selected", "white")])
-        self.style.configure("App.Vertical.TScrollbar", troughcolor=self.bg_color, bordercolor=self.sidebar_color, arrowcolor=self.primary_color)
+        style = tb.Style()
+        style.configure("Sub.Root.TFrame", background=self.bg_color)
+        style.configure("Sub.Header.TFrame", background=self.primary_color)
+        style.configure("Sub.Header.TLabel", background=self.primary_color, foreground="white", font=("Segoe UI", 16, "bold"))
+        style.configure("Sub.Card.TFrame", background="white", bordercolor="#d1d8e0", borderwidth=1, relief="solid")
+        style.configure("Sub.Treeview", rowheight=30, font=("Segoe UI", 10), background="white", fieldbackground="white")
+        style.configure("Sub.Treeview.Heading", font=("Segoe UI", 10, "bold"), background=self.primary_color, foreground="white")
+        style.map("Sub.Treeview", background=[("selected", self.accent_color)], foreground=[("selected", "white")])
 
     def _build_layout(self):
-        # Support both standalone windows and embedded Frame hosts.
-        host_window = self.master.winfo_toplevel() if hasattr(self.master, "winfo_toplevel") else None
-        if host_window and host_window is self.master and hasattr(host_window, "title"):
-            host_window.title("SubCoding - Opening Balances")
+        self.frame = tb.Frame(self.master, style="Sub.Root.TFrame")
+        self.frame.pack(fill=tk.BOTH, expand=True)
 
-        if isinstance(self.master, (tk.Tk, tk.Toplevel)):
-            self.master.configure(bg=self.bg_color)
-        elif host_window and host_window is not self.master:
-            try:
-                host_window.configure(bg=self.bg_color)
-            except tk.TclError:
-                pass
+        header = tb.Frame(self.frame, style="Sub.Header.TFrame", padding=10)
+        header.pack(fill="x")
+        tb.Label(header, text="إدارة العقارات والموردين", style="Sub.Header.TLabel").pack(side="right")
 
-        self.master.grid_rowconfigure(0, weight=1)
-        self.master.grid_columnconfigure(0, weight=1)
+        actions = tb.Frame(header, style="Sub.Header.TFrame")
+        actions.pack(side="left")
+        for title, action in (
+            ("جديد", self._action_new),
+            ("حفظ", self._action_save),
+            ("تعديل", self._action_edit),
+            ("حذف", self._action_delete),
+            ("بحث", self._action_search),
+        ):
+            tb.Button(actions, text=title, command=action).pack(side="left", padx=3)
 
-        root = ttk.Frame(self.master, style="App.Root.TFrame", padding=12)
-        root.grid(sticky="nsew")
-        root.grid_rowconfigure(1, weight=1)
-        root.grid_columnconfigure(0, weight=1)
+        self.notebook = ttk.Notebook(self.frame)
+        self.notebook.pack(fill="both", expand=True, padx=10, pady=10)
 
-        # header
-        header = ttk.Frame(root, style="App.Header.TFrame", padding=(12,10))
-        header.grid(row=0, column=0, sticky="ew", pady=(0,12))
-        header.grid_columnconfigure(1, weight=1)
+        self.tab_properties = tb.Frame(self.notebook, style="Sub.Root.TFrame", padding=10)
+        self.tab_vendors = tb.Frame(self.notebook, style="Sub.Root.TFrame", padding=10)
+        self.notebook.add(self.tab_properties, text="العقارات")
+        self.notebook.add(self.tab_vendors, text="الموردون")
 
-        actions = ttk.Frame(header, style="App.Header.TFrame")
-        actions.grid(row=0, column=0, sticky="w")
+        self._build_properties_tab()
+        self._build_vendors_tab()
 
-        ttk.Button(actions, text="جديد", style="App.SubCoding.Primary.TButton", command=self._action_new).grid(row=0, column=0, padx=(0,8))
-        ttk.Button(actions, text="حفظ", style="App.SubCoding.Success.TButton", command=self._action_save).grid(row=0, column=1, padx=8)
-        ttk.Button(actions, text="تعديل", style="App.SubCoding.Warning.TButton", command=self._action_edit).grid(row=0, column=2, padx=8)
-        ttk.Button(actions, text="حذف", style="App.SubCoding.Danger.TButton", command=self._action_delete).grid(row=0, column=3, padx=8)
-        ttk.Button(actions, text="بحث", style="App.SubCoding.Info.TButton", command=self._action_search).grid(row=0, column=4, padx=8)
-        ttk.Button(actions, text="خروج", style="App.SubCoding.Exit.TButton", command=self._action_exit).grid(row=0, column=5, padx=(8,0))
+    def _build_properties_tab(self):
+        self.tab_properties.columnconfigure(0, weight=2)
+        self.tab_properties.columnconfigure(1, weight=1)
+        self.tab_properties.rowconfigure(0, weight=1)
 
-        ttk.Label(header, text="شاشة تعريف العقارات والورثة", style="App.HeaderTitle.TLabel").grid(row=0, column=1, sticky="e")
+        table_card = tb.Frame(self.tab_properties, style="Sub.Card.TFrame", padding=8)
+        table_card.grid(row=0, column=0, sticky="nsew", padx=(0, 6))
+        form_card = tb.Frame(self.tab_properties, style="Sub.Card.TFrame", padding=8)
+        form_card.grid(row=0, column=1, sticky="nsew", padx=(6, 0))
+        form_card.columnconfigure(0, weight=1)
 
-        # Notebook
-        notebook_wrapper = ttk.Frame(root, style="App.Root.TFrame", padding=(0, 6, 0, 0))
-        notebook_wrapper.grid(row=1, column=0, sticky="nsew")
-        notebook_wrapper.grid_rowconfigure(0, weight=1)
-        notebook_wrapper.grid_columnconfigure(0, weight=1)
+        self.property_tree = ttk.Treeview(table_card, columns=("id", "name", "price", "account"), show="headings", style="Sub.Treeview")
+        for c, t, w in (("id", "ID", 60), ("name", "اسم العقار", 220), ("price", "سعر الشراء", 120), ("account", "كود الحساب", 120)):
+            self.property_tree.heading(c, text=t, anchor="e")
+            self.property_tree.column(c, width=w, anchor="e")
+        self.property_tree.pack(fill="both", expand=True)
+        self.property_tree.bind("<<TreeviewSelect>>", self._on_property_select)
 
-        self.notebook = ttk.Notebook(notebook_wrapper, style="App.SubCoding.TNotebook")
-        self.notebook.grid(row=0, column=0, sticky="nsew", padx=6, pady=6)
-        # tabs
-        self.plot_tab = ttk.Frame(self.notebook, style="App.Root.TFrame", padding=12)
-        self.vendor_tab = ttk.Frame(self.notebook, style="App.Root.TFrame", padding=12)
-        self.plot_tab.grid_rowconfigure(0, weight=1)
-        self.plot_tab.grid_columnconfigure(0, weight=1)
-        self.vendor_tab.grid_rowconfigure(0, weight=1)
-        self.vendor_tab.grid_columnconfigure(0, weight=1)
+        self.p_name = self._make_labeled_entry(form_card, "اسم العقار", 0)
+        self.p_price = self._make_labeled_entry(form_card, "سعر الشراء", 2)
+        self.p_account_code = self._make_labeled_entry(form_card, "كود الحساب", 4, readonly=True)
 
-        self.notebook.add(self.plot_tab, text="تعريف العقارات")
-        self.notebook.add(self.vendor_tab, text="الورثة والأرصدة الافتتاحية")
+        ttk.Label(form_card, text="الحساب", anchor="e").grid(row=6, column=0, sticky="e", pady=(8, 4))
+        self.p_account_combo = ttk.Combobox(form_card, state="readonly", justify="right")
+        self.p_account_combo.grid(row=7, column=0, sticky="ew")
+        bind_searchable_combobox(self.p_account_combo)
+        self.p_account_combo.bind("<<ComboboxSelected>>", self._on_property_account_selected)
 
-        # build tab interfaces
-        self._build_plot_interface()
-        self._build_vendor_interface()
+    def _build_vendors_tab(self):
+        self.tab_vendors.columnconfigure(0, weight=2)
+        self.tab_vendors.columnconfigure(1, weight=1)
+        self.tab_vendors.rowconfigure(0, weight=1)
 
-    # ---------------------------
-    # Plot (properties) UI
-    # ---------------------------
-    def _build_plot_interface(self):
-        container = ttk.Frame(self.plot_tab, style="App.Root.TFrame")
-        container.grid(row=0, column=0, sticky="nsew")
-        container.grid_columnconfigure(0, weight=2)
-        container.grid_columnconfigure(1, weight=1)
-        container.grid_rowconfigure(0, weight=1)
+        table_card = tb.Frame(self.tab_vendors, style="Sub.Card.TFrame", padding=8)
+        table_card.grid(row=0, column=0, sticky="nsew", padx=(0, 6))
+        form_card = tb.Frame(self.tab_vendors, style="Sub.Card.TFrame", padding=8)
+        form_card.grid(row=0, column=1, sticky="nsew", padx=(6, 0))
+        form_card.columnconfigure(0, weight=1)
 
-        # table card
-        table_card = ttk.Frame(container, style="App.Card.TFrame", padding=12)
-        table_card.grid(row=0, column=0, sticky="nsew", padx=(0,8))
-        table_card.grid_rowconfigure(1, weight=1)
-        table_card.grid_columnconfigure(0, weight=1)
-
-        ttk.Label(table_card, text="العقارات المسجلة", style="App.CardTitle.TLabel").grid(row=0, column=0, sticky="e", pady=(0,8))
-        cols = ("id", "name", "cost", "area", "loc")
-        heads = ["كود", "اسم العقار", "التكلفة", "المساحة", "الموقع"]
-        self.plot_tree = self._create_tree(table_card, 1, 0, cols, heads)
-        self.plot_tree.bind("<<TreeviewSelect>>", self._on_plot_select)
-
-        # form card
-        form_card = ttk.Frame(container, style="App.Card.TFrame", padding=12)
-        form_card.grid(row=0, column=1, sticky="nsew", padx=(8,0))
-        form_card.grid_columnconfigure(0, weight=1)
-
-        ttk.Label(form_card, text="بيانات العقار", style="App.CardTitle.TLabel").grid(row=0, column=0, sticky="e", pady=(0,8))
-
-        self.p_name = self._create_label_entry(form_card, "اسم العقار:", 1)
-        self.p_cost = self._create_label_entry(form_card, "التكلفة:", 3)
-        self.p_cost.bind("<FocusOut>", lambda _e: self._format_money_entry(self.p_cost))
-        self.p_area = self._create_label_entry(form_card, "المساحة:", 5)
-        self.p_loc = self._create_label_entry(form_card, "الموقع:", 7)
-
-        ttk.Button(form_card, text="حفظ العقار", style="App.SubCoding.Success.TButton", command=self._save_plot).grid(
-            row=9, column=0, sticky="ew", pady=(12, 0)
-        )
-
-    # ---------------------------
-    # Vendor UI
-    # ---------------------------
-    def _build_vendor_interface(self):
-        container = ttk.Frame(self.vendor_tab, style="App.Root.TFrame")
-        container.grid(row=0, column=0, sticky="nsew")
-        container.grid_columnconfigure(0, weight=2)
-        container.grid_columnconfigure(1, weight=1)
-        container.grid_rowconfigure(0, weight=1)
-
-        table_card = ttk.Frame(container, style="App.Card.TFrame", padding=12)
-        table_card.grid(row=0, column=0, sticky="nsew", padx=(0,8))
-        table_card.grid_rowconfigure(1, weight=1)
-        table_card.grid_columnconfigure(0, weight=1)
-
-        ttk.Label(table_card, text="الورثة والأرصدة", style="App.CardTitle.TLabel").grid(row=0, column=0, sticky="e", pady=(0,8))
-        cols = ("id", "name", "group", "property", "bal")
-        heads = ["كود", "الاسم", "المجموعة", "العقار المرتبط", "الرصيد"]
-        self.vendor_tree = self._create_tree(table_card, 1, 0, cols, heads)
+        self.vendor_tree = ttk.Treeview(table_card, columns=("id", "name", "group", "property", "account"), show="headings", style="Sub.Treeview")
+        for c, t, w in (("id", "ID", 60), ("name", "اسم المورد", 180), ("group", "المجموعة", 170), ("property", "العقار", 170), ("account", "كود الحساب", 120)):
+            self.vendor_tree.heading(c, text=t, anchor="e")
+            self.vendor_tree.column(c, width=w, anchor="e")
+        self.vendor_tree.pack(fill="both", expand=True)
         self.vendor_tree.bind("<<TreeviewSelect>>", self._on_vendor_select)
 
-        form_card = ttk.Frame(container, style="App.Card.TFrame", padding=12)
-        form_card.grid(row=0, column=1, sticky="nsew", padx=(8,0))
-        form_card.grid_columnconfigure(0, weight=1)
+        self.v_name = self._make_labeled_entry(form_card, "اسم المورد", 0)
 
-        ttk.Label(form_card, text="بيانات الوارث", style="App.CardTitle.TLabel").grid(row=0, column=0, sticky="e", pady=(0,8))
+        ttk.Label(form_card, text="مجموعة المورد", anchor="e").grid(row=2, column=0, sticky="e", pady=(8, 4))
+        self.v_group_combo = ttk.Combobox(form_card, state="readonly", justify="right")
+        self.v_group_combo.grid(row=3, column=0, sticky="ew")
+        bind_searchable_combobox(self.v_group_combo)
 
-        self.v_name = self._create_label_entry(form_card, "اسم الوارث:", 1)
+        tb.Button(form_card, text="إضافة مجموعة", command=self._open_add_group_dialog).grid(row=4, column=0, sticky="ew", pady=(8, 6))
 
-        ttk.Label(form_card, text="المجموعة (اسم الأسرة/المجموعة):", style="App.FormLabel.TLabel").grid(row=3, column=0, sticky="e", pady=(8,2))
-        # Keep chart-linked suggestions, but allow typing custom family group names.
-        self.v_group_cb = ttk.Combobox(form_card, style="App.Field.TCombobox", state="normal", justify="right", font=("Segoe UI", 12, "bold"))
-        self.v_group_cb.grid(row=4, column=0, sticky="ew", pady=(0,8))
-        bind_searchable_combobox(self.v_group_cb)
+        ttk.Label(form_card, text="العقار", anchor="e").grid(row=5, column=0, sticky="e", pady=(8, 4))
+        self.v_property_combo = ttk.Combobox(form_card, state="readonly", justify="right")
+        self.v_property_combo.grid(row=6, column=0, sticky="ew")
+        bind_searchable_combobox(self.v_property_combo)
 
-        ttk.Label(form_card, text="الحساب:", style="App.FormLabel.TLabel").grid(row=5, column=0, sticky="e", pady=(8,2))
-        self.v_account_cb = ttk.Combobox(form_card, style="App.Field.TCombobox", state="readonly", justify="right", font=("Segoe UI", 12, "bold"))
-        self.v_account_cb.grid(row=6, column=0, sticky="ew", pady=(0,8))
-        set_combobox_values(self.v_account_cb, [name for _code, name in self.vendor_account_options])
-        bind_searchable_combobox(self.v_account_cb)
-        self._set_vendor_account_selection(self.default_vendor_account_code)
+        self.v_account_code = self._make_labeled_entry(form_card, "كود الحساب", 8, readonly=True)
 
-        ttk.Label(form_card, text="اختر العقار (إلزامي):", style="App.FormLabel.TLabel").grid(row=7, column=0, sticky="e", pady=(8,2))
-        self.v_plot_cb = ttk.Combobox(form_card, style="App.Field.TCombobox", state="readonly", justify="right", font=("Segoe UI", 12, "bold"))
-        self.v_plot_cb.grid(row=8, column=0, sticky="ew", pady=(0,8))
-        bind_searchable_combobox(self.v_plot_cb)
+    def _make_labeled_entry(self, parent, label_text, row, readonly=False):
+        ttk.Label(parent, text=label_text, anchor="e").grid(row=row, column=0, sticky="e", pady=(8, 4))
+        entry = ttk.Entry(parent, justify="right")
+        entry.grid(row=row + 1, column=0, sticky="ew")
+        if readonly:
+            entry.configure(state="readonly")
+        return entry
 
-        self.v_balance = self._create_label_entry(form_card, "رصيد افتتاحي (مدين):", 10)
-        self.v_balance.insert(0, "0.00")
-        self.v_balance.bind("<KeyRelease>", lambda _e: self._update_balance_preview())
-        self.v_balance.bind("<FocusOut>", lambda _e: self._update_balance_preview(force_format=True))
+    def _set_entry(self, entry, value):
+        was_readonly = str(entry.cget("state")) == "readonly"
+        if was_readonly:
+            entry.configure(state="normal")
+        entry.delete(0, tk.END)
+        entry.insert(0, value)
+        if was_readonly:
+            entry.configure(state="readonly")
 
-        # summary box
-        self._build_summary_box(form_card, 12)
+    def _on_property_account_selected(self, _event=None):
+        display = self.p_account_combo.get().strip()
+        code = display.split(" - ", 1)[0].strip() if display else ""
+        self._set_entry(self.p_account_code, code)
 
-        ttk.Button(form_card, text="حفظ الوارث", style="App.SubCoding.Success.TButton", command=self._save_vendor).grid(
-            row=14, column=0, sticky="ew", pady=(12, 0)
-        )
+    def _refresh_all_data(self):
+        self._load_group_choices()
+        self._load_property_choices()
+        self._load_property_rows()
+        self._load_vendor_rows()
+
+    def _load_group_choices(self):
+        conn = get_connection()
+        if not conn:
+            return
+        try:
+            with conn:
+                with conn.cursor() as cur:
+                    cur.execute("SELECT id, group_name, account_code FROM finance.vendor_groups ORDER BY group_name")
+                    rows = cur.fetchall() or []
+            values = []
+            self.group_display_to_id = {}
+            for group_id, group_name, account_code in rows:
+                display = f"{str(account_code or '').strip()} - {(group_name or '').strip()}".strip(" -")
+                if display:
+                    values.append(display)
+                    self.group_display_to_id[display] = int(group_id)
+            set_combobox_values(self.v_group_combo, values)
+        except Exception as exc:
+            messagebox.showerror("خطأ", get_db_error_message(exc, "تعذر تحميل مجموعات الموردين"))
+        finally:
+            conn.close()
+
+    def _load_property_choices(self):
+        conn = get_connection()
+        if not conn:
+            return
+        try:
+            with conn:
+                with conn.cursor() as cur:
+                    cur.execute("SELECT id, property_name, account_code FROM finance.properties ORDER BY property_name")
+                    property_rows = cur.fetchall() or []
+                    cur.execute(
+                        """
+                        SELECT account_code, account_name
+                        FROM finance.accounts
+                        WHERE account_level = 'تحليلي'
+                          AND is_active = true
+                          AND (parent_code = '1111' OR account_code LIKE '1111%')
+                        ORDER BY account_code
+                        """
+                    )
+                    account_rows = cur.fetchall() or []
+
+            property_values = []
+            self.property_display_to_id = {}
+            for property_id, property_name, account_code in property_rows:
+                display = f"{str(account_code or '').strip()} - {(property_name or '').strip()}".strip(" -")
+                if display:
+                    property_values.append(display)
+                    self.property_display_to_id[display] = int(property_id)
+
+            account_values = []
+            for account_code, account_name in account_rows:
+                code = str(account_code or "").strip()
+                name = (account_name or "").strip()
+                if code:
+                    account_values.append(f"{code} - {name}" if name else code)
+
+            set_combobox_values(self.v_property_combo, property_values)
+            set_combobox_values(self.p_account_combo, account_values)
+        except Exception as exc:
+            messagebox.showerror("خطأ", get_db_error_message(exc, "تعذر تحميل خيارات العقار والحساب"))
+        finally:
+            conn.close()
+
+    def _load_property_rows(self):
+        self.property_tree.delete(*self.property_tree.get_children())
+        conn = get_connection()
+        if not conn:
+            return
+        try:
+            with conn:
+                with conn.cursor() as cur:
+                    cur.execute("SELECT id, property_name, purchase_price, account_code FROM finance.properties ORDER BY id DESC")
+                    rows = cur.fetchall() or []
+            for row in rows:
+                self.property_tree.insert("", tk.END, iid=str(row[0]), values=tuple("" if value is None else value for value in row))
+        except Exception as exc:
+            messagebox.showerror("خطأ", get_db_error_message(exc, "تعذر تحميل العقارات"))
+        finally:
+            conn.close()
+
+    def _load_vendor_rows(self):
+        self.vendor_tree.delete(*self.vendor_tree.get_children())
+        conn = get_connection()
+        if not conn:
+            return
+        try:
+            with conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        SELECT
+                            v.id,
+                            v.vendor_name,
+                            g.group_name,
+                            p.property_name,
+                            v.account_code
+                        FROM finance.vendors v
+                        LEFT JOIN finance.vendor_groups g ON v.group_id = g.id
+                        LEFT JOIN finance.properties p ON v.property_id = p.id
+                        ORDER BY v.id DESC
+                        """
+                    )
+                    rows = cur.fetchall() or []
+            for row in rows:
+                self.vendor_tree.insert("", tk.END, iid=str(row[0]), values=tuple("" if value is None else value for value in row))
+        except Exception as exc:
+            messagebox.showerror("خطأ", get_db_error_message(exc, "تعذر تحميل الموردين"))
+        finally:
+            conn.close()
+
+    def _save_property(self):
+        name = self.p_name.get().strip()
+        account_code = self.p_account_code.get().strip()
+        try:
+            purchase_price = float((self.p_price.get().strip() or "0").replace(",", ""))
+        except ValueError:
+            messagebox.showwarning("تنبيه", "سعر الشراء يجب أن يكون رقماً")
+            return
+
+        if not name or not account_code:
+            messagebox.showwarning("تنبيه", "يرجى إدخال اسم العقار واختيار الحساب")
+            return
+
+        conn = get_connection()
+        if not conn:
+            return
+        try:
+            with conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        INSERT INTO finance.properties (property_name, purchase_price, total_cost, status, account_code)
+                        VALUES (%s, %s, %s, %s, %s)
+                        """,
+                        (name, purchase_price, purchase_price, "نشط", account_code),
+                    )
+            messagebox.showinfo("نجاح", "تم حفظ العقار")
+            self._action_new()
+            self._refresh_all_data()
+        except Exception as exc:
+            messagebox.showerror("خطأ", get_db_error_message(exc, "فشل حفظ العقار"))
+        finally:
+            conn.close()
+
+    def _save_vendor(self):
+        vendor_name = self.v_name.get().strip()
+        group_id = self.group_display_to_id.get(self.v_group_combo.get().strip())
+        property_id = self.property_display_to_id.get(self.v_property_combo.get().strip())
+
+        if not vendor_name or group_id is None:
+            messagebox.showwarning("تنبيه", "يرجى إدخال اسم المورد واختيار المجموعة")
+            return
+
+        conn = get_connection()
+        if not conn:
+            return
+        try:
+            with conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "INSERT INTO finance.vendors (vendor_name, group_id, property_id) VALUES (%s, %s, %s)",
+                        (vendor_name, group_id, property_id),
+                    )
+            messagebox.showinfo("نجاح", "تم حفظ المورد")
+            self._action_new()
+            self._refresh_all_data()
+        except Exception as exc:
+            messagebox.showerror("خطأ", get_db_error_message(exc, "فشل حفظ المورد"))
+        finally:
+            conn.close()
+
+    def _edit_property(self):
+        if not self.selected_property_id:
+            messagebox.showwarning("تنبيه", "اختر عقاراً للتعديل")
+            return
+
+        name = self.p_name.get().strip()
+        account_code = self.p_account_code.get().strip()
+        try:
+            purchase_price = float((self.p_price.get().strip() or "0").replace(",", ""))
+        except ValueError:
+            messagebox.showwarning("تنبيه", "سعر الشراء يجب أن يكون رقماً")
+            return
+
+        conn = get_connection()
+        if not conn:
+            return
+        try:
+            with conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        UPDATE finance.properties
+                        SET property_name=%s, purchase_price=%s, total_cost=%s, account_code=%s
+                        WHERE id=%s
+                        """,
+                        (name, purchase_price, purchase_price, account_code, self.selected_property_id),
+                    )
+            messagebox.showinfo("نجاح", "تم تعديل العقار")
+            self._refresh_all_data()
+        except Exception as exc:
+            messagebox.showerror("خطأ", get_db_error_message(exc, "فشل تعديل العقار"))
+        finally:
+            conn.close()
+
+    def _edit_vendor(self):
+        if not self.selected_vendor_id:
+            messagebox.showwarning("تنبيه", "اختر مورداً للتعديل")
+            return
+
+        vendor_name = self.v_name.get().strip()
+        group_id = self.group_display_to_id.get(self.v_group_combo.get().strip())
+        property_id = self.property_display_to_id.get(self.v_property_combo.get().strip())
+
+        conn = get_connection()
+        if not conn:
+            return
+        try:
+            with conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "UPDATE finance.vendors SET vendor_name=%s, group_id=%s, property_id=%s WHERE id=%s",
+                        (vendor_name, group_id, property_id, self.selected_vendor_id),
+                    )
+            messagebox.showinfo("نجاح", "تم تعديل المورد")
+            self._refresh_all_data()
+        except Exception as exc:
+            messagebox.showerror("خطأ", get_db_error_message(exc, "فشل تعديل المورد"))
+        finally:
+            conn.close()
+
+    def _delete_property(self):
+        if not self.selected_property_id:
+            messagebox.showwarning("تنبيه", "اختر عقاراً للحذف")
+            return
+        if not messagebox.askyesno("تأكيد", "هل تريد حذف العقار المحدد؟"):
+            return
+        self._delete_by_id("finance.properties", self.selected_property_id, "فشل حذف العقار")
+        self._action_new()
+        self._refresh_all_data()
+
+    def _delete_vendor(self):
+        if not self.selected_vendor_id:
+            messagebox.showwarning("تنبيه", "اختر مورداً للحذف")
+            return
+        if not messagebox.askyesno("تأكيد", "هل تريد حذف المورد المحدد؟"):
+            return
+        self._delete_by_id("finance.vendors", self.selected_vendor_id, "فشل حذف المورد")
+        self._action_new()
+        self._refresh_all_data()
+
+    def _delete_by_id(self, table_name, item_id, error_prefix):
+        conn = get_connection()
+        if not conn:
+            return
+        try:
+            with conn:
+                with conn.cursor() as cur:
+                    cur.execute(f"DELETE FROM {table_name} WHERE id=%s", (item_id,))
+        except Exception as exc:
+            messagebox.showerror("خطأ", get_db_error_message(exc, error_prefix))
+        finally:
+            conn.close()
+
+    def _on_property_select(self, _event=None):
+        selected = self.property_tree.selection()
+        if not selected:
+            return
+        row = self.property_tree.item(selected[0], "values")
+        if not row:
+            return
+        self.selected_property_id = int(row[0])
+        self.p_name.delete(0, tk.END)
+        self.p_name.insert(0, row[1] or "")
+        self.p_price.delete(0, tk.END)
+        self.p_price.insert(0, row[2] or "")
+
+        code = (row[3] or "").strip()
+        self._set_entry(self.p_account_code, code)
+        for value in self.p_account_combo["values"]:
+            if str(value).startswith(f"{code} -") or str(value) == code:
+                self.p_account_combo.set(value)
+                break
+
+    def _on_vendor_select(self, _event=None):
+        selected = self.vendor_tree.selection()
+        if not selected:
+            return
+        row = self.vendor_tree.item(selected[0], "values")
+        if not row:
+            return
+        self.selected_vendor_id = int(row[0])
+
+        self.v_name.delete(0, tk.END)
+        self.v_name.insert(0, row[1] or "")
+        self._set_entry(self.v_account_code, str(row[4] or ""))
+
+        group_name = (row[2] or "").strip()
+        for value in self.v_group_combo["values"]:
+            if str(value).endswith(f"- {group_name}") or str(value) == group_name:
+                self.v_group_combo.set(value)
+                break
+
+        property_name = (row[3] or "").strip()
+        for value in self.v_property_combo["values"]:
+            if str(value).endswith(f"- {property_name}") or str(value) == property_name:
+                self.v_property_combo.set(value)
+                break
+
+    def _open_add_group_dialog(self):
+        group_name = simpledialog.askstring("إضافة مجموعة", "اسم مجموعة الموردين:", parent=self.master)
+        group_name = (group_name or "").strip()
+        if not group_name:
+            return
+
+        conn = get_connection()
+        if not conn:
+            return
+        try:
+            with conn:
+                with conn.cursor() as cur:
+                    cur.execute("INSERT INTO finance.vendor_groups (group_name) VALUES (%s)", (group_name,))
+            self._load_group_choices()
+            messagebox.showinfo("نجاح", "تمت إضافة المجموعة")
+        except Exception as exc:
+            messagebox.showerror("خطأ", get_db_error_message(exc, "فشل إضافة مجموعة الموردين"))
+        finally:
+            conn.close()
+
+    def _action_new(self):
+        if self.notebook.index(self.notebook.select()) == 0:
+            self.selected_property_id = None
+            self.p_name.delete(0, tk.END)
+            self.p_price.delete(0, tk.END)
+            self.p_account_combo.set("")
+            self._set_entry(self.p_account_code, "")
+        else:
+            self.selected_vendor_id = None
+            self.v_name.delete(0, tk.END)
+            self.v_group_combo.set("")
+            self.v_property_combo.set("")
+            self._set_entry(self.v_account_code, "")
+
+    def _action_save(self):
+        if self.notebook.index(self.notebook.select()) == 0:
+            self._save_property()
+        else:
+            self._save_vendor()
+
+    def _action_edit(self):
+        if self.notebook.index(self.notebook.select()) == 0:
+            self._edit_property()
+        else:
+            self._edit_vendor()
+
+    def _action_delete(self):
+        if self.notebook.index(self.notebook.select()) == 0:
+            self._delete_property()
+        else:
+            self._delete_vendor()
+
+    def _action_search(self):
+        query = simpledialog.askstring("بحث", "أدخل كلمة البحث:", parent=self.master)
+        text = (query or "").strip().lower()
+        if not text:
+            self._refresh_all_data()
+            return
+
+        active_tree = self.property_tree if self.notebook.index(self.notebook.select()) == 0 else self.vendor_tree
+        for iid in active_tree.get_children():
+            values = active_tree.item(iid, "values")
+            if text in " ".join(str(v or "").lower() for v in values):
+                active_tree.selection_set(iid)
+                active_tree.see(iid)
+                active_tree.focus(iid)
+                return
+        messagebox.showinfo("بحث", "لا توجد نتائج")
+
+    def _build_properties_tab(self):
+        self.tab_properties.columnconfigure(0, weight=2)
+        self.tab_properties.columnconfigure(1, weight=1)
+        self.tab_properties.rowconfigure(0, weight=1)
+
+        table_card = tb.Frame(self.tab_properties, style="App.Sub.Card.TFrame", padding=10)
+        table_card.grid(row=0, column=0, sticky="nsew", padx=(0, 6))
+        table_card.rowconfigure(0, weight=1)
+        table_card.columnconfigure(0, weight=1)
+
+        columns = ("id", "property_name", "purchase_price", "account_code")
+        self.property_tree = ttk.Treeview(table_card, columns=columns, show="headings", style="App.Sub.Treeview")
+        self.property_tree.heading("id", text="ID", anchor="e")
+        self.property_tree.heading("property_name", text="اسم العقار", anchor="e")
+        self.property_tree.heading("purchase_price", text="سعر الشراء", anchor="e")
+        self.property_tree.heading("account_code", text="كود الحساب", anchor="e")
+        self.property_tree.column("id", width=60, anchor="e")
+        self.property_tree.column("property_name", width=240, anchor="e")
+        self.property_tree.column("purchase_price", width=130, anchor="e")
+        self.property_tree.column("account_code", width=120, anchor="e")
+        self.property_tree.grid(row=0, column=0, sticky="nsew")
+        self.property_tree.bind("<<TreeviewSelect>>", self._on_property_select)
+
+        form_card = tb.Frame(self.tab_properties, style="App.Sub.Card.TFrame", padding=10)
+        form_card.grid(row=0, column=1, sticky="nsew", padx=(6, 0))
+        form_card.columnconfigure(0, weight=1)
+
+        self.p_name = self._make_labeled_entry(form_card, "اسم العقار", 0)
+        self.p_price = self._make_labeled_entry(form_card, "سعر الشراء", 2)
+        self.p_account_code = self._make_labeled_entry(form_card, "كود الحساب", 4, readonly=True)
+
+        ttk.Label(form_card, text="حساب العقار", style="App.Sub.FieldLabel.TLabel").grid(row=6, column=0, sticky="e", pady=(8, 4))
+        self.p_account_combo = ttk.Combobox(form_card, state="readonly", justify="right", font=("Segoe UI", 11, "bold"))
+        self.p_account_combo.grid(row=7, column=0, sticky="ew")
+        bind_searchable_combobox(self.p_account_combo)
+        self.p_account_combo.bind("<<ComboboxSelected>>", self._on_property_account_selected)
+
+    def _build_vendors_tab(self):
+        self.tab_vendors.columnconfigure(0, weight=2)
+        self.tab_vendors.columnconfigure(1, weight=1)
+        self.tab_vendors.rowconfigure(0, weight=1)
+
+        table_card = tb.Frame(self.tab_vendors, style="App.Sub.Card.TFrame", padding=10)
+        table_card.grid(row=0, column=0, sticky="nsew", padx=(0, 6))
+        table_card.rowconfigure(0, weight=1)
+        table_card.columnconfigure(0, weight=1)
+
+        columns = ("id", "vendor_name", "group_name", "property_name", "account_code")
+        self.vendor_tree = ttk.Treeview(table_card, columns=columns, show="headings", style="App.Sub.Treeview")
+        self.vendor_tree.heading("id", text="ID", anchor="e")
+        self.vendor_tree.heading("vendor_name", text="اسم المورد", anchor="e")
+        self.vendor_tree.heading("group_name", text="المجموعة", anchor="e")
+        self.vendor_tree.heading("property_name", text="العقار", anchor="e")
+        self.vendor_tree.heading("account_code", text="كود الحساب", anchor="e")
+        self.vendor_tree.column("id", width=60, anchor="e")
+        self.vendor_tree.column("vendor_name", width=210, anchor="e")
+        self.vendor_tree.column("group_name", width=180, anchor="e")
+        self.vendor_tree.column("property_name", width=180, anchor="e")
+        self.vendor_tree.column("account_code", width=130, anchor="e")
+        self.vendor_tree.grid(row=0, column=0, sticky="nsew")
+        self.vendor_tree.bind("<<TreeviewSelect>>", self._on_vendor_select)
+
+        form_card = tb.Frame(self.tab_vendors, style="App.Sub.Card.TFrame", padding=10)
+        form_card.grid(row=0, column=1, sticky="nsew", padx=(6, 0))
+        form_card.columnconfigure(0, weight=1)
+
+        self.v_name = self._make_labeled_entry(form_card, "اسم المورد", 0)
+
+        ttk.Label(form_card, text="مجموعة المورد", style="App.Sub.FieldLabel.TLabel").grid(row=2, column=0, sticky="e", pady=(8, 4))
+        self.v_group_combo = ttk.Combobox(form_card, state="readonly", justify="right", font=("Segoe UI", 11, "bold"))
+        self.v_group_combo.grid(row=3, column=0, sticky="ew")
+        bind_searchable_combobox(self.v_group_combo)
+
+        tb.Button(form_card, text="إضافة مجموعة", style="App.Sub.Primary.TButton", command=self._open_add_group_dialog).grid(row=4, column=0, sticky="ew", pady=(8, 6))
+
+        ttk.Label(form_card, text="العقار", style="App.Sub.FieldLabel.TLabel").grid(row=5, column=0, sticky="e", pady=(8, 4))
+        self.v_property_combo = ttk.Combobox(form_card, state="readonly", justify="right", font=("Segoe UI", 11, "bold"))
+        self.v_property_combo.grid(row=6, column=0, sticky="ew")
+        bind_searchable_combobox(self.v_property_combo)
+
+        self.v_account_code = self._make_labeled_entry(form_card, "كود حساب المورد", 8, readonly=True)
 
     def _build_summary_box(self, parent, row):
         summary = ttk.Frame(parent, style="App.Summary.TFrame", padding=10)
@@ -338,397 +667,179 @@ class SubCodingOpeningBalances:
         tree.tag_configure("empty", foreground=self.sidebar_color)
         return tree
 
-    # ---------------------------
-    # Vendor account ComboBox helpers
-    # ---------------------------
-    def _set_vendor_account_selection(self, account_code):
-        code = str(account_code or "").strip()
-        account_name = self.vendor_account_code_to_name.get(
-            code,
-            self.vendor_account_code_to_name.get(self.default_vendor_account_code, ""),
-        )
-        if hasattr(self, "v_account_cb"):
-            self.v_account_cb.set(account_name)
-
-    def _get_selected_vendor_account_code(self):
-        selected_name = self.v_account_cb.get().strip() if hasattr(self, "v_account_cb") else ""
-        return self.vendor_account_name_to_code.get(selected_name, self.default_vendor_account_code)
-
-    def _set_vendor_group_selection(self, group_text):
-        if not hasattr(self, "v_group_cb"):
-            return
-        text = str(group_text or "").strip()
-        if not text:
-            self.v_group_cb.set("")
-            return
-        display = self.vendor_group_name_to_display.get(text, text)
-        self.v_group_cb.set(display)
-
-    def _get_selected_vendor_group_name(self):
-        text = self.v_group_cb.get().strip() if hasattr(self, "v_group_cb") else ""
-        return self.vendor_group_display_to_name.get(text, text)
-
-    def _load_vendor_group_options(self, cur):
-        chart_options = []
-        try:
-            # Prefer explicit group branch (2102) from chart of accounts.
-            cur.execute(
-                """
-                SELECT account_code, account_name
-                FROM finance.accounts
-                WHERE account_code = '2102' OR parent_code = '2102'
-                ORDER BY account_code
-                """
-            )
-            rows = cur.fetchall() or []
-            chart_options = [f"{str(code).strip()} - {name}" for code, name in rows if code and name]
-        except Exception:
-            # Fallback: keep going with saved vendor group names only.
-            chart_options = []
-
-        existing_group_names = []
-        try:
-            # Also keep previously saved family/group names as quick suggestions.
-            cur.execute(
-                """
-                SELECT DISTINCT COALESCE(group_name, '')
-                FROM finance.vendors
-                WHERE COALESCE(group_name, '') <> ''
-                ORDER BY group_name
-                """
-            )
-            existing_group_names = [str(r[0]).strip() for r in (cur.fetchall() or []) if r and str(r[0]).strip()]
-        except Exception:
-            existing_group_names = []
-
-        options = []
-        seen = set()
-        for item in chart_options + existing_group_names:
-            if item and item not in seen:
-                seen.add(item)
-                options.append(item)
-
-        self.vendor_group_options = options
-        self.vendor_group_display_to_name = {}
-        self.vendor_group_name_to_display = {}
-        for display in options:
-            # Chart option like "2102 - المجموعات" stores only account name.
-            name = display.split(" - ", 1)[1].strip() if " - " in display else display
-            self.vendor_group_display_to_name[display] = name
-            if name not in self.vendor_group_name_to_display:
-                self.vendor_group_name_to_display[name] = display
-
-        if hasattr(self, "v_group_cb"):
-            set_combobox_values(self.v_group_cb, self.vendor_group_options)
-            if self.v_group_cb.get() not in self.v_group_cb["values"]:
-                # Keep typed value if user entered custom group name.
-                current = self.v_group_cb.get().strip()
-                self.v_group_cb.set(current)
-
-    def _resolve_opening_credit_account_code(self, cur):
-        preferred_codes = ["3999", "3103", "3101", "3102"]
-        cur.execute(
-            "SELECT account_code FROM finance.accounts WHERE account_code = ANY(%s)",
-            (preferred_codes,),
-        )
-        existing = {str(r[0]).strip() for r in (cur.fetchall() or []) if r and r[0] is not None}
-        for code in preferred_codes:
-            if code in existing:
-                return code
-        raise Exception("تعذر تحديد حساب دائن موازن للرصيد الافتتاحي. أضف أحد الأكواد: 3999 أو 3103 أو 3101 أو 3102 في دليل الحسابات.")
-
-    # ---------------------------
-    # Data population & reload
-    # ---------------------------
-    def _show_empty_state(self, tree, columns_count, text="No Data Available"):
-        tree.delete(*tree.get_children())
-        empty_values = [text] + ["" for _ in range(columns_count - 1)]
-        tree.insert("", "end", iid="__empty__", values=tuple(empty_values), tags=("empty",))
-        # make sure selection cleared
-        try:
-            tree.selection_remove(tree.selection())
-        except Exception:
-            pass
-
-    def _fill_tree(self, tree, rows, columns_count):
-        tree.delete(*tree.get_children())
-        if not rows:
-            self._show_empty_state(tree, columns_count)
-            return
-        for index, row in enumerate(rows):
-            tag = "even" if index % 2 == 0 else "odd"
-            vals = tuple("" if v is None else v for v in row)
-            tree.insert("", "end", iid=str(row[0]), values=vals, tags=(tag,))
-
-    # ---------------------------
-    # Numeric / voucher validators
-    # ---------------------------
-    def _normalize_number_text(self, text):
-        if text is None:
-            return ""
-        normalized = str(text).strip()
-        if not normalized:
-            return ""
-
-        # Support Arabic-Indic digits and Arabic separators.
-        trans = str.maketrans("٠١٢٣٤٥٦٧٨٩", "0123456789")
-        normalized = normalized.translate(trans)
-        normalized = normalized.replace("\u066c", ",").replace("\u066b", ".")
-        normalized = normalized.replace(" ", "").replace(",", "")
-        return normalized
-
-    def _try_parse_amount(self, text):
-        normalized = self._normalize_number_text(text)
-        if normalized == "":
-            return None
-        try:
-            return float(normalized)
-        except Exception:
-            return None
-
-    def _format_amount(self, value):
-        try:
-            return f"{float(value):,.2f}"
-        except Exception:
-            return "0.00"
-
-    def _format_money_entry(self, entry_widget):
-        raw = entry_widget.get().strip()
-        parsed = self._try_parse_amount(raw)
-        if parsed is None:
-            return
-        entry_widget.delete(0, "end")
-        entry_widget.insert(0, self._format_amount(parsed))
-
-    def _parse_required_amount(self, text, field_label):
-        parsed = self._try_parse_amount(text)
-        if parsed is None:
-            messagebox.showerror("خطأ", f"{field_label} يجب أن يكون رقمًا صحيحًا")
-            return None
-        if parsed < 0:
-            messagebox.showerror("خطأ", f"{field_label} لا يمكن أن يكون سالبًا")
-            return None
-        return parsed
-
-    def _show_db_error(self, error, prefix="حدث خطأ في قاعدة البيانات"):
-        formatted = get_db_error_message(error, prefix)
-        logger.error(formatted)
-        messagebox.showerror("خطأ", formatted)
-
-    def execute_query(self, query, params=None, fetch=False, fetchone=False, error_prefix="فشل تنفيذ العملية", show_error=True, raise_error=False):
+    def _refresh_group_choices(self):
         conn = get_connection()
         if not conn:
-            if show_error:
-                messagebox.showerror("خطأ", "تعذر الاتصال بقاعدة البيانات")
-            return None
-
-        cur = None
+            return
         try:
-            cur = conn.cursor()
-            cur.execute(query, params or ())
+            with conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        SELECT id, group_name, account_code
+                        FROM finance.vendor_groups
+                        ORDER BY group_name
+                        """
+                    )
+                    rows = cur.fetchall() or []
 
-            if fetchone:
-                result = cur.fetchone()
-            elif fetch:
-                result = cur.fetchall()
-            else:
-                result = True
+            values = []
+            self.group_display_to_id = {}
+            for group_id, group_name, account_code in rows:
+                safe_name = (group_name or "").strip()
+                safe_code = (str(account_code or "")).strip()
+                display = f"{safe_code} - {safe_name}" if safe_code else safe_name
+                if not display:
+                    continue
+                values.append(display)
+                self.group_display_to_id[display] = int(group_id)
 
-            conn.commit()
-            return result
-        except Exception as error:
-            try:
-                conn.rollback()
-            except Exception:
-                pass
-
-            if show_error:
-                self._show_db_error(error, error_prefix)
-            if raise_error:
-                raise
-            return None
+            set_combobox_values(self.v_group_combo, values)
+        except Exception as exc:
+            messagebox.showerror("خطأ", get_db_error_message(exc, "تعذر تحميل مجموعات الموردين"))
         finally:
-            try:
-                if cur is not None:
-                    cur.close()
-            except Exception:
-                pass
-            try:
-                conn.close()
-            except Exception:
-                pass
+            conn.close()
 
-    def execute_transaction(self, operation, error_prefix="فشل تنفيذ العملية", show_error=True, raise_error=False):
+    def _refresh_property_choices(self):
         conn = get_connection()
         if not conn:
-            if show_error:
-                messagebox.showerror("خطأ", "تعذر الاتصال بقاعدة البيانات")
-            return None
-
-        cur = None
+            return
         try:
-            cur = conn.cursor()
-            result = operation(cur)
-            conn.commit()
-            return result
-        except Exception as error:
-            try:
-                conn.rollback()
-            except Exception:
-                pass
+            with conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        SELECT id, property_name, account_code
+                        FROM finance.properties
+                        ORDER BY property_name
+                        """
+                    )
+                    property_rows = cur.fetchall() or []
 
-            if show_error:
-                self._show_db_error(error, error_prefix)
-            if raise_error:
-                raise
-            return None
+                    cur.execute(
+                        """
+                        SELECT account_code, account_name
+                        FROM finance.accounts
+                        WHERE is_active = true
+                          AND account_level = 'تحليلي'
+                          AND (parent_code = '1111' OR account_code LIKE '1111%')
+                        ORDER BY account_code
+                        """
+                    )
+                    account_rows = cur.fetchall() or []
+
+            property_values = []
+            self.property_display_to_id = {}
+            for property_id, property_name, account_code in property_rows:
+                safe_name = (property_name or "").strip()
+                safe_code = (str(account_code or "")).strip()
+                display = f"{safe_code} - {safe_name}" if safe_code else safe_name
+                if not display:
+                    continue
+                property_values.append(display)
+                self.property_display_to_id[display] = int(property_id)
+
+            account_values = []
+            for account_code, account_name in account_rows:
+                safe_code = (str(account_code or "")).strip()
+                safe_name = (account_name or "").strip()
+                if not safe_code:
+                    continue
+                account_values.append(f"{safe_code} - {safe_name}" if safe_name else safe_code)
+
+            set_combobox_values(self.v_property_combo, property_values)
+            set_combobox_values(self.p_account_combo, account_values)
+        except Exception as exc:
+            messagebox.showerror("خطأ", get_db_error_message(exc, "تعذر تحميل خيارات العقارات والحسابات"))
         finally:
-            try:
-                if cur is not None:
-                    cur.close()
-            except Exception:
-                pass
-            try:
-                conn.close()
-            except Exception:
-                pass
+            conn.close()
 
-    def _validate_opening_v_type(self, v_type):
-        # Guard against CHECK constraint failures on finance.vouchers.v_type.
-        if v_type != self.allowed_opening_v_type:
-            messagebox.showerror(
-                "خطأ",
-                "قيمة نوع القيد غير مسموحة. يجب أن تكون 'رصيد افتتاحى' فقط لتفادي خطأ CHECK constraint.",
-            )
-            return False
-        return True
+    def _refresh_properties_table(self):
+        self.property_tree.delete(*self.property_tree.get_children())
+        conn = get_connection()
+        if not conn:
+            return
+
+        try:
+            with conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        SELECT id, property_name, purchase_price, account_code
+                        FROM finance.properties
+                        ORDER BY id DESC
+                        """
+                    )
+                    rows = cur.fetchall() or []
+
+            if not rows:
+                self.property_tree.insert("", tk.END, values=("", "لا توجد بيانات", "", ""))
+                return
+
+            for idx, row in enumerate(rows):
+                safe = tuple("" if value is None else value for value in row)
+                tag = "even" if idx % 2 == 0 else "odd"
+                self.property_tree.insert("", tk.END, iid=str(row[0]), values=safe, tags=(tag,))
+        except Exception as exc:
+            messagebox.showerror("خطأ", get_db_error_message(exc, "تعذر تحميل بيانات العقارات"))
+        finally:
+            conn.close()
+
+    def _refresh_vendors_table(self):
+        self.vendor_tree.delete(*self.vendor_tree.get_children())
+        conn = get_connection()
+        if not conn:
+            return
+
+        try:
+            with conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        SELECT
+                            v.id,
+                            v.vendor_name,
+                            g.group_name,
+                            p.property_name,
+                            v.account_code
+                        FROM finance.vendors v
+                        LEFT JOIN finance.vendor_groups g ON v.group_id = g.id
+                        LEFT JOIN finance.properties p ON v.property_id = p.id
+                        ORDER BY v.id DESC
+                        """
+                    )
+                    rows = cur.fetchall() or []
+
+            if not rows:
+                self.vendor_tree.insert("", tk.END, values=("", "لا توجد بيانات", "", "", ""))
+                return
+
+            for idx, row in enumerate(rows):
+                safe = tuple("" if value is None else value for value in row)
+                tag = "even" if idx % 2 == 0 else "odd"
+                self.vendor_tree.insert("", tk.END, iid=str(row[0]), values=safe, tags=(tag,))
+        except Exception as exc:
+            messagebox.showerror("خطأ", get_db_error_message(exc, "تعذر تحميل بيانات الموردين"))
+        finally:
+            conn.close()
 
     def _refresh_all_data(self):
-        errors = []
+        self._refresh_group_choices()
+        self._refresh_property_choices()
+        self._refresh_properties_table()
+        self._refresh_vendors_table()
 
-        # Always reset UI containers first so a previous failed query cannot leave stale state.
-        self.plot_rows_cache = []
-        self.vendor_rows_cache = []
-        self.plot_map = {}
-        self.vendor_map = {}
-        self._show_empty_state(self.plot_tree, 5)
-        self._show_empty_state(self.vendor_tree, 5)
-        if hasattr(self, "v_plot_cb"):
-            set_combobox_values(self.v_plot_cb, [])
-            self.v_plot_cb.set("")
+    def _get_selected_group_id(self):
+        display = self.v_group_combo.get().strip()
+        if not display:
+            return None
+        return self.group_display_to_id.get(display)
 
-        try:
-            plot_rows = self.execute_query(
-                """
-                SELECT id,
-                       property_name,
-                       COALESCE(total_cost, 0) AS total_cost,
-                       COALESCE(purchase_price, 0) AS area_value,
-                       COALESCE(location, '') AS location
-                FROM finance.properties
-                ORDER BY id DESC
-                """,
-                fetch=True,
-                error_prefix="تعذر تحميل بيانات العقارات",
-                show_error=False,
-                raise_error=True,
-            ) or []
-
-            self.plot_rows_cache = plot_rows
-            self.plot_map = {int(r[0]): r for r in self.plot_rows_cache if r and r[0] is not None}
-            plot_display_rows = [
-                (
-                    r[0],
-                    r[1],
-                    self._format_amount(r[2] if r[2] is not None else 0),
-                    r[3] if r[3] is not None else "",
-                    r[4],
-                )
-                for r in self.plot_rows_cache
-            ]
-            self._fill_tree(self.plot_tree, plot_display_rows, 5)
-
-            set_combobox_values(self.v_plot_cb, [f"{r[0]} - {r[1]}" for r in self.plot_rows_cache])
-            if self.v_plot_cb.get() not in self.v_plot_cb["values"]:
-                self.v_plot_cb.set("")
-        except Exception as error:
-            errors.append(get_db_error_message(error, "تعذر تحميل بيانات العقارات"))
-
-        try:
-            def _load_groups(cur):
-                self._load_vendor_group_options(cur)
-                return True
-
-            self.execute_transaction(
-                _load_groups,
-                error_prefix="تعذر تحميل خيارات المجموعات",
-                show_error=False,
-                raise_error=True,
-            )
-        except Exception as error:
-            errors.append(get_db_error_message(error, "تعذر تحميل خيارات المجموعات"))
-            if hasattr(self, "v_group_cb"):
-                set_combobox_values(self.v_group_cb, [])
-
-        try:
-            vendor_rows_raw = self.execute_query(
-                """
-                SELECT v.id,
-                       v.vendor_name,
-                       COALESCE(v.group_name, '') AS group_name,
-                       COALESCE(p.property_name, '-') AS property_name,
-                       COALESCE((
-                           SELECT SUM(COALESCE(l.debit, 0) - COALESCE(l.credit, 0))
-                           FROM finance.ledger l
-                           WHERE l.vendor_id = v.id
-                       ), 0) AS balance,
-                       v.property_id,
-                       (
-                           SELECT l2.account_code
-                           FROM finance.ledger l2
-                           JOIN finance.vouchers v2 ON v2.id = l2.voucher_id
-                           WHERE l2.vendor_id = v.id
-                             AND v2.v_type = %s
-                             AND COALESCE(l2.debit, 0) > 0
-                           ORDER BY l2.id DESC
-                           LIMIT 1
-                       ) AS opening_account_code
-                FROM finance.vendors v
-                LEFT JOIN finance.properties p ON p.id = v.property_id
-                ORDER BY v.vendor_name
-                """,
-                (self.allowed_opening_v_type,),
-                fetch=True,
-                error_prefix="تعذر تحميل بيانات الورثة",
-                show_error=False,
-                raise_error=True,
-            ) or []
-
-            self.vendor_rows_cache = [(r[0], r[1], r[2], r[3], r[4]) for r in vendor_rows_raw]
-            self.vendor_map = {
-                int(r[0]): {
-                    "id": int(r[0]),
-                    "name": r[1],
-                    "group": r[2],
-                    "property_name": r[3],
-                    "balance": r[4],
-                    "property_id": r[5],
-                    "opening_account_code": r[6] or self.default_vendor_account_code,
-                }
-                for r in vendor_rows_raw
-                if r and r[0] is not None
-            }
-            vendor_display_rows = [
-                (r[0], r[1], r[2], r[3], self._format_amount(r[4] if r[4] is not None else 0))
-                for r in self.vendor_rows_cache
-            ]
-            self._fill_tree(self.vendor_tree, vendor_display_rows, 5)
-        except Exception as error:
-            errors.append(get_db_error_message(error, "تعذر تحميل بيانات الورثة"))
-
-        if errors:
-            logger.error("Partial refresh errors: %s", " | ".join(errors))
-            messagebox.showwarning("تنبيه", "تم تحميل جزء من البيانات مع وجود أخطاء.\n\n" + "\n\n".join(errors[:2]))
+    def _get_selected_property_id(self):
+        display = self.v_property_combo.get().strip()
+        if not display:
+            return None
+        return self.property_display_to_id.get(display)
 
     # ---------------------------
     # CRUD: Save / Edit / Delete
@@ -1235,5 +1346,496 @@ class SubCodingOpeningBalances:
         if rest:
             chunks.append(under_1000(rest))
 
-        return " و ".join([c for c in chunks if c])
+            return " و ".join([c for c in chunks if c])
+
+        # --- Refactored implementation and runtime symbol rebind ---
+
+        class _SubCodingOpeningBalancesRefactored:
+            def __init__(self, master):
+                self.master = master
+                self.primary_color = "#2c3e50"
+                self.accent_color = "#1abc9c"
+                self.bg_color = "#f4f7f6"
+                self.selected_property_id = None
+                self.selected_vendor_id = None
+                self.group_map = {}
+                self.property_map = {}
+
+                self._setup_styles()
+                self._build_ui()
+                self._reload_all()
+
+            def _setup_styles(self):
+                style = tb.Style()
+                style.configure("Ref.Sub.Root.TFrame", background=self.bg_color)
+                style.configure("Ref.Sub.Header.TFrame", background=self.primary_color)
+                style.configure("Ref.Sub.Header.TLabel", background=self.primary_color, foreground="white", font=("Segoe UI", 16, "bold"))
+                style.configure("Ref.Sub.Card.TFrame", background="white", bordercolor="#d1d8e0", borderwidth=1, relief="solid")
+                style.configure("Ref.Sub.Treeview", rowheight=30, font=("Segoe UI", 10))
+                style.configure("Ref.Sub.Treeview.Heading", font=("Segoe UI", 10, "bold"))
+
+            def _build_ui(self):
+                self.frame = tb.Frame(self.master, style="Ref.Sub.Root.TFrame")
+                self.frame.pack(fill=tk.BOTH, expand=True)
+
+                header = tb.Frame(self.frame, style="Ref.Sub.Header.TFrame", padding=10)
+                header.pack(fill="x")
+                tb.Label(header, text="إدارة العقارات والموردين", style="Ref.Sub.Header.TLabel").pack(side="right")
+
+                actions = tb.Frame(header, style="Ref.Sub.Header.TFrame")
+                actions.pack(side="left")
+                for text, command in (("جديد", self._action_new), ("حفظ", self._action_save), ("تعديل", self._action_edit), ("حذف", self._action_delete), ("بحث", self._action_search)):
+                    tb.Button(actions, text=text, command=command).pack(side="left", padx=3)
+
+                self.notebook = ttk.Notebook(self.frame)
+                self.notebook.pack(fill="both", expand=True, padx=10, pady=10)
+                self.tab_properties = tb.Frame(self.notebook, style="Ref.Sub.Root.TFrame", padding=10)
+                self.tab_vendors = tb.Frame(self.notebook, style="Ref.Sub.Root.TFrame", padding=10)
+                self.notebook.add(self.tab_properties, text="العقارات")
+                self.notebook.add(self.tab_vendors, text="الموردون")
+
+                self._build_property_tab()
+                self._build_vendor_tab()
+
+            def _build_property_tab(self):
+                self.tab_properties.columnconfigure(0, weight=2)
+                self.tab_properties.columnconfigure(1, weight=1)
+                self.tab_properties.rowconfigure(0, weight=1)
+
+                card_table = tb.Frame(self.tab_properties, style="Ref.Sub.Card.TFrame", padding=8)
+                card_table.grid(row=0, column=0, sticky="nsew", padx=(0, 6))
+                card_form = tb.Frame(self.tab_properties, style="Ref.Sub.Card.TFrame", padding=8)
+                card_form.grid(row=0, column=1, sticky="nsew", padx=(6, 0))
+                card_form.columnconfigure(0, weight=1)
+
+                self.property_tree = ttk.Treeview(card_table, columns=("id", "name", "price", "account"), show="headings", style="Ref.Sub.Treeview")
+                self.property_tree.heading("id", text="ID", anchor="e")
+                self.property_tree.heading("name", text="اسم العقار", anchor="e")
+                self.property_tree.heading("price", text="سعر الشراء", anchor="e")
+                self.property_tree.heading("account", text="كود الحساب", anchor="e")
+                self.property_tree.column("id", width=60, anchor="e")
+                self.property_tree.column("name", width=220, anchor="e")
+                self.property_tree.column("price", width=120, anchor="e")
+                self.property_tree.column("account", width=120, anchor="e")
+                self.property_tree.pack(fill="both", expand=True)
+                self.property_tree.bind("<<TreeviewSelect>>", self._on_property_select)
+
+                self.p_name = self._labeled_entry(card_form, "اسم العقار", 0)
+                self.p_price = self._labeled_entry(card_form, "سعر الشراء", 2)
+                self.p_account_code = self._labeled_entry(card_form, "كود الحساب", 4, readonly=True)
+
+                ttk.Label(card_form, text="حساب العقار").grid(row=6, column=0, sticky="e", pady=(8, 3))
+                self.p_account_combo = ttk.Combobox(card_form, state="readonly", justify="right")
+                self.p_account_combo.grid(row=7, column=0, sticky="ew")
+                bind_searchable_combobox(self.p_account_combo)
+                self.p_account_combo.bind("<<ComboboxSelected>>", lambda _e: self._set_entry(self.p_account_code, self.p_account_combo.get().split(" - ", 1)[0].strip()))
+
+            def _build_vendor_tab(self):
+                self.tab_vendors.columnconfigure(0, weight=2)
+                self.tab_vendors.columnconfigure(1, weight=1)
+                self.tab_vendors.rowconfigure(0, weight=1)
+
+                card_table = tb.Frame(self.tab_vendors, style="Ref.Sub.Card.TFrame", padding=8)
+                card_table.grid(row=0, column=0, sticky="nsew", padx=(0, 6))
+                card_form = tb.Frame(self.tab_vendors, style="Ref.Sub.Card.TFrame", padding=8)
+                card_form.grid(row=0, column=1, sticky="nsew", padx=(6, 0))
+                card_form.columnconfigure(0, weight=1)
+
+                self.vendor_tree = ttk.Treeview(card_table, columns=("id", "name", "group", "property", "account"), show="headings", style="Ref.Sub.Treeview")
+                for col, title, w in (("id", "ID", 60), ("name", "اسم المورد", 180), ("group", "المجموعة", 160), ("property", "العقار", 160), ("account", "كود الحساب", 110)):
+                    self.vendor_tree.heading(col, text=title, anchor="e")
+                    self.vendor_tree.column(col, width=w, anchor="e")
+                self.vendor_tree.pack(fill="both", expand=True)
+                self.vendor_tree.bind("<<TreeviewSelect>>", self._on_vendor_select)
+
+                self.v_name = self._labeled_entry(card_form, "اسم المورد", 0)
+
+                ttk.Label(card_form, text="مجموعة المورد").grid(row=2, column=0, sticky="e", pady=(8, 3))
+                self.v_group_combo = ttk.Combobox(card_form, state="readonly", justify="right")
+                self.v_group_combo.grid(row=3, column=0, sticky="ew")
+                bind_searchable_combobox(self.v_group_combo)
+
+                tb.Button(card_form, text="إضافة مجموعة", command=self._add_group_dialog).grid(row=4, column=0, sticky="ew", pady=6)
+
+                ttk.Label(card_form, text="العقار").grid(row=5, column=0, sticky="e", pady=(8, 3))
+                self.v_property_combo = ttk.Combobox(card_form, state="readonly", justify="right")
+                self.v_property_combo.grid(row=6, column=0, sticky="ew")
+                bind_searchable_combobox(self.v_property_combo)
+
+                self.v_account_code = self._labeled_entry(card_form, "كود حساب المورد", 8, readonly=True)
+
+            def _labeled_entry(self, parent, text, row, readonly=False):
+                ttk.Label(parent, text=text).grid(row=row, column=0, sticky="e", pady=(8, 3))
+                entry = ttk.Entry(parent, justify="right")
+                entry.grid(row=row + 1, column=0, sticky="ew")
+                if readonly:
+                    entry.configure(state="readonly")
+                return entry
+
+            def _set_entry(self, entry, value):
+                state = str(entry.cget("state"))
+                if state == "readonly":
+                    entry.configure(state="normal")
+                entry.delete(0, tk.END)
+                entry.insert(0, value)
+                if state == "readonly":
+                    entry.configure(state="readonly")
+
+            def _reload_all(self):
+                self._load_group_choices()
+                self._load_property_choices()
+                self._load_property_rows()
+                self._load_vendor_rows()
+
+            def _load_group_choices(self):
+                conn = get_connection()
+                if not conn:
+                    return
+                try:
+                    with conn:
+                        with conn.cursor() as cur:
+                            cur.execute("SELECT id, group_name, account_code FROM finance.vendor_groups ORDER BY group_name")
+                            rows = cur.fetchall() or []
+                    values = []
+                    self.group_map = {}
+                    for row in rows:
+                        display = f"{(row[2] or '').strip()} - {(row[1] or '').strip()}".strip(" -")
+                        if display:
+                            values.append(display)
+                            self.group_map[display] = int(row[0])
+                    set_combobox_values(self.v_group_combo, values)
+                except Exception as exc:
+                    messagebox.showerror("خطأ", get_db_error_message(exc, "تعذر تحميل مجموعات الموردين"))
+                finally:
+                    conn.close()
+
+            def _load_property_choices(self):
+                conn = get_connection()
+                if not conn:
+                    return
+                try:
+                    with conn:
+                        with conn.cursor() as cur:
+                            cur.execute("SELECT id, property_name, account_code FROM finance.properties ORDER BY property_name")
+                            p_rows = cur.fetchall() or []
+                            cur.execute("SELECT account_code, account_name FROM finance.accounts WHERE account_level='تحليلي' AND is_active=true AND (parent_code='1111' OR account_code LIKE '1111%') ORDER BY account_code")
+                            a_rows = cur.fetchall() or []
+                    p_values = []
+                    self.property_map = {}
+                    for row in p_rows:
+                        display = f"{(row[2] or '').strip()} - {(row[1] or '').strip()}".strip(" -")
+                        if display:
+                            p_values.append(display)
+                            self.property_map[display] = int(row[0])
+                    a_values = [f"{(r[0] or '').strip()} - {(r[1] or '').strip()}".strip(" -") for r in a_rows if (r[0] or '').strip()]
+                    set_combobox_values(self.v_property_combo, p_values)
+                    set_combobox_values(self.p_account_combo, a_values)
+                except Exception as exc:
+                    messagebox.showerror("خطأ", get_db_error_message(exc, "تعذر تحميل خيارات العقار والحساب"))
+                finally:
+                    conn.close()
+
+            def _load_property_rows(self):
+                self.property_tree.delete(*self.property_tree.get_children())
+                conn = get_connection()
+                if not conn:
+                    return
+                try:
+                    with conn:
+                        with conn.cursor() as cur:
+                            cur.execute("SELECT id, property_name, purchase_price, account_code FROM finance.properties ORDER BY id DESC")
+                            rows = cur.fetchall() or []
+                    for row in rows:
+                        self.property_tree.insert("", tk.END, iid=str(row[0]), values=tuple("" if v is None else v for v in row))
+                except Exception as exc:
+                    messagebox.showerror("خطأ", get_db_error_message(exc, "تعذر تحميل العقارات"))
+                finally:
+                    conn.close()
+
+            def _load_vendor_rows(self):
+                self.vendor_tree.delete(*self.vendor_tree.get_children())
+                conn = get_connection()
+                if not conn:
+                    return
+                try:
+                    with conn:
+                        with conn.cursor() as cur:
+                            cur.execute(
+                                """
+                                SELECT
+                                    v.id,
+                                    v.vendor_name,
+                                    g.group_name,
+                                    p.property_name,
+                                    v.account_code
+                                FROM finance.vendors v
+                                LEFT JOIN finance.vendor_groups g ON v.group_id = g.id
+                                LEFT JOIN finance.properties p ON v.property_id = p.id
+                                ORDER BY v.id DESC
+                                """
+                            )
+                            rows = cur.fetchall() or []
+                    for row in rows:
+                        self.vendor_tree.insert("", tk.END, iid=str(row[0]), values=tuple("" if v is None else v for v in row))
+                except Exception as exc:
+                    messagebox.showerror("خطأ", get_db_error_message(exc, "تعذر تحميل الموردين"))
+                finally:
+                    conn.close()
+
+            def _save_property(self):
+                name = self.p_name.get().strip()
+                code = self.p_account_code.get().strip()
+                try:
+                    price = float((self.p_price.get().strip() or "0").replace(",", ""))
+                except ValueError:
+                    messagebox.showwarning("تنبيه", "سعر الشراء يجب أن يكون رقمًا")
+                    return
+                if not name or not code:
+                    messagebox.showwarning("تنبيه", "يرجى إدخال اسم العقار واختيار الحساب")
+                    return
+
+                conn = get_connection()
+                if not conn:
+                    return
+                try:
+                    with conn:
+                        with conn.cursor() as cur:
+                            cur.execute("INSERT INTO finance.properties (property_name, purchase_price, total_cost, status, account_code) VALUES (%s, %s, %s, %s, %s)", (name, price, price, "نشط", code))
+                    self._action_new()
+                    self._reload_all()
+                    messagebox.showinfo("نجاح", "تم حفظ العقار")
+                except Exception as exc:
+                    messagebox.showerror("خطأ", get_db_error_message(exc, "فشل حفظ العقار"))
+                finally:
+                    conn.close()
+
+            def _save_vendor(self):
+                name = self.v_name.get().strip()
+                group_id = self.group_map.get(self.v_group_combo.get().strip())
+                property_id = self.property_map.get(self.v_property_combo.get().strip())
+                if not name or group_id is None:
+                    messagebox.showwarning("تنبيه", "يرجى إدخال اسم المورد واختيار المجموعة")
+                    return
+
+                conn = get_connection()
+                if not conn:
+                    return
+                try:
+                    with conn:
+                        with conn.cursor() as cur:
+                            cur.execute("INSERT INTO finance.vendors (vendor_name, group_id, property_id) VALUES (%s, %s, %s)", (name, group_id, property_id))
+                    self._action_new()
+                    self._reload_all()
+                    messagebox.showinfo("نجاح", "تم حفظ المورد")
+                except Exception as exc:
+                    messagebox.showerror("خطأ", get_db_error_message(exc, "فشل حفظ المورد"))
+                finally:
+                    conn.close()
+
+            def _edit_property(self):
+                if not self.selected_property_id:
+                    messagebox.showwarning("تنبيه", "اختر عقاراً للتعديل")
+                    return
+                name = self.p_name.get().strip()
+                code = self.p_account_code.get().strip()
+                try:
+                    price = float((self.p_price.get().strip() or "0").replace(",", ""))
+                except ValueError:
+                    messagebox.showwarning("تنبيه", "سعر الشراء يجب أن يكون رقمًا")
+                    return
+
+                conn = get_connection()
+                if not conn:
+                    return
+                try:
+                    with conn:
+                        with conn.cursor() as cur:
+                            cur.execute("UPDATE finance.properties SET property_name=%s, purchase_price=%s, total_cost=%s, account_code=%s WHERE id=%s", (name, price, price, code, self.selected_property_id))
+                    self._reload_all()
+                    messagebox.showinfo("نجاح", "تم تعديل العقار")
+                except Exception as exc:
+                    messagebox.showerror("خطأ", get_db_error_message(exc, "فشل تعديل العقار"))
+                finally:
+                    conn.close()
+
+            def _edit_vendor(self):
+                if not self.selected_vendor_id:
+                    messagebox.showwarning("تنبيه", "اختر مورداً للتعديل")
+                    return
+                name = self.v_name.get().strip()
+                group_id = self.group_map.get(self.v_group_combo.get().strip())
+                property_id = self.property_map.get(self.v_property_combo.get().strip())
+
+                conn = get_connection()
+                if not conn:
+                    return
+                try:
+                    with conn:
+                        with conn.cursor() as cur:
+                            cur.execute("UPDATE finance.vendors SET vendor_name=%s, group_id=%s, property_id=%s WHERE id=%s", (name, group_id, property_id, self.selected_vendor_id))
+                    self._reload_all()
+                    messagebox.showinfo("نجاح", "تم تعديل المورد")
+                except Exception as exc:
+                    messagebox.showerror("خطأ", get_db_error_message(exc, "فشل تعديل المورد"))
+                finally:
+                    conn.close()
+
+            def _delete_property(self):
+                if not self.selected_property_id:
+                    messagebox.showwarning("تنبيه", "اختر عقاراً للحذف")
+                    return
+                if not messagebox.askyesno("تأكيد", "هل تريد حذف العقار المحدد؟"):
+                    return
+                conn = get_connection()
+                if not conn:
+                    return
+                try:
+                    with conn:
+                        with conn.cursor() as cur:
+                            cur.execute("DELETE FROM finance.properties WHERE id=%s", (self.selected_property_id,))
+                    self._action_new()
+                    self._reload_all()
+                except Exception as exc:
+                    messagebox.showerror("خطأ", get_db_error_message(exc, "فشل حذف العقار"))
+                finally:
+                    conn.close()
+
+            def _delete_vendor(self):
+                if not self.selected_vendor_id:
+                    messagebox.showwarning("تنبيه", "اختر مورداً للحذف")
+                    return
+                if not messagebox.askyesno("تأكيد", "هل تريد حذف المورد المحدد؟"):
+                    return
+                conn = get_connection()
+                if not conn:
+                    return
+                try:
+                    with conn:
+                        with conn.cursor() as cur:
+                            cur.execute("DELETE FROM finance.vendors WHERE id=%s", (self.selected_vendor_id,))
+                    self._action_new()
+                    self._reload_all()
+                except Exception as exc:
+                    messagebox.showerror("خطأ", get_db_error_message(exc, "فشل حذف المورد"))
+                finally:
+                    conn.close()
+
+            def _on_property_select(self, _event=None):
+                selected = self.property_tree.selection()
+                if not selected:
+                    return
+                row = self.property_tree.item(selected[0], "values")
+                if not row:
+                    return
+                self.selected_property_id = int(row[0])
+                self.p_name.delete(0, tk.END)
+                self.p_name.insert(0, row[1] or "")
+                self.p_price.delete(0, tk.END)
+                self.p_price.insert(0, row[2] or "")
+                code = (row[3] or "").strip()
+                self._set_entry(self.p_account_code, code)
+                for value in self.p_account_combo["values"]:
+                    if str(value).startswith(f"{code} -") or str(value) == code:
+                        self.p_account_combo.set(value)
+                        break
+
+            def _on_vendor_select(self, _event=None):
+                selected = self.vendor_tree.selection()
+                if not selected:
+                    return
+                row = self.vendor_tree.item(selected[0], "values")
+                if not row:
+                    return
+                self.selected_vendor_id = int(row[0])
+                self.v_name.delete(0, tk.END)
+                self.v_name.insert(0, row[1] or "")
+                self._set_entry(self.v_account_code, (row[4] or "").strip())
+
+                group_name = (row[2] or "").strip()
+                for value in self.v_group_combo["values"]:
+                    if str(value).endswith(f"- {group_name}") or str(value) == group_name:
+                        self.v_group_combo.set(value)
+                        break
+
+                property_name = (row[3] or "").strip()
+                for value in self.v_property_combo["values"]:
+                    if str(value).endswith(f"- {property_name}") or str(value) == property_name:
+                        self.v_property_combo.set(value)
+                        break
+
+            def _add_group_dialog(self):
+                group_name = simpledialog.askstring("إضافة مجموعة", "اسم مجموعة الموردين:", parent=self.master)
+                group_name = (group_name or "").strip()
+                if not group_name:
+                    return
+                conn = get_connection()
+                if not conn:
+                    return
+                try:
+                    with conn:
+                        with conn.cursor() as cur:
+                            cur.execute("INSERT INTO finance.vendor_groups (group_name) VALUES (%s)", (group_name,))
+                    self._load_group_choices()
+                    messagebox.showinfo("نجاح", "تمت إضافة المجموعة")
+                except Exception as exc:
+                    messagebox.showerror("خطأ", get_db_error_message(exc, "فشل إضافة المجموعة"))
+                finally:
+                    conn.close()
+
+            def _action_new(self):
+                if self.notebook.index(self.notebook.select()) == 0:
+                    self.selected_property_id = None
+                    self.p_name.delete(0, tk.END)
+                    self.p_price.delete(0, tk.END)
+                    self.p_account_combo.set("")
+                    self._set_entry(self.p_account_code, "")
+                else:
+                    self.selected_vendor_id = None
+                    self.v_name.delete(0, tk.END)
+                    self.v_group_combo.set("")
+                    self.v_property_combo.set("")
+                    self._set_entry(self.v_account_code, "")
+
+            def _action_save(self):
+                if self.notebook.index(self.notebook.select()) == 0:
+                    self._save_property()
+                else:
+                    self._save_vendor()
+
+            def _action_edit(self):
+                if self.notebook.index(self.notebook.select()) == 0:
+                    self._edit_property()
+                else:
+                    self._edit_vendor()
+
+            def _action_delete(self):
+                if self.notebook.index(self.notebook.select()) == 0:
+                    self._delete_property()
+                else:
+                    self._delete_vendor()
+
+            def _action_search(self):
+                text = simpledialog.askstring("بحث", "أدخل كلمة البحث:", parent=self.master)
+                query = (text or "").strip().lower()
+                if not query:
+                    self._reload_all()
+                    return
+                tree = self.property_tree if self.notebook.index(self.notebook.select()) == 0 else self.vendor_tree
+                for iid in tree.get_children():
+                    values = tree.item(iid, "values")
+                    if query in " ".join(str(value or "").lower() for value in values):
+                        tree.selection_set(iid)
+                        tree.see(iid)
+                        tree.focus(iid)
+                        return
+                messagebox.showinfo("بحث", "لا توجد نتائج")
+
+
+                SubCodingOpeningBalances = _SubCodingOpeningBalancesRefactored
+
+        # ...existing code...
+
+        from subcoding_opening_balances_refactored import SubCodingOpeningBalances as _RefactoredSubCodingOpeningBalances
+
+        SubCodingOpeningBalances = _RefactoredSubCodingOpeningBalances
 
