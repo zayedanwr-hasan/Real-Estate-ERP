@@ -8,7 +8,7 @@ from receipt_vouchers import ReceiptVoucherScreen
 from chart_of_accounts import ChartOfAccountsScreen
 from subcoding_opening_balances_refactored import SubCodingOpeningBalances
 from vendor_groups_screen import VendorGroupsScreen
-from adjustment_journal import AdjustmentJournalEntryScreen
+from adjustment_journal import SettlementEntryScreen
 from reports_screen import ReportsScreen
 from app_constants import SYSTEM_NAME
 
@@ -382,7 +382,7 @@ class RealEstateApp:
 
     def open_adjustment_journal(self):
         self.clear_display_area()
-        self.current_page = AdjustmentJournalEntryScreen(self.display_area)
+        self.current_page = SettlementEntryScreen(self.display_area)
 
     def open_reports(self):
         self.clear_display_area()
