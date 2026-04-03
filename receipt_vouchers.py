@@ -4,7 +4,12 @@ from tkinter import messagebox, simpledialog
 
 import ttkbootstrap as ttk
 
-from app_constants import SYSTEM_NAME, VOUCHER_TYPE_RECEIPT
+from app_constants import (
+    CUSTOMER_CONTROL_ACCOUNT_CODE,
+    SYSTEM_NAME,
+    VENDOR_CONTROL_ACCOUNT_CODE,
+    VOUCHER_TYPE_RECEIPT,
+)
 from combobox_helper import bind_searchable_combobox, set_combobox_values
 from db_connection import get_connection, get_db_error_message
 
@@ -24,24 +29,29 @@ class ReceiptVoucherScreen:
         self.reference_no_var = tk.StringVar(value="10001")
         self.voucher_type_var = tk.StringVar(value=VOUCHER_TYPE_RECEIPT)
         self.currency_var = tk.StringVar(value="ريال يمني")
-        self.cash_account_var = tk.StringVar()
+        self.fund_var = tk.StringVar(value="الصندوق الرئيسي")
 
+        self.beneficiary_id_var = tk.StringVar()
         self.beneficiary_var = tk.StringVar()
-        self.phone_var = tk.StringVar()
-        self.related_property_var = tk.StringVar()
 
-        self.line_account_code_var = tk.StringVar()
-        self.line_account_name_var = tk.StringVar()
-        self.line_amount_var = tk.StringVar(value="0.00")
-        self.line_exchange_rate_var = tk.StringVar(value="1.00")
+        self.amount_var = tk.StringVar(value="0.00")
+        self.amount_words_var = tk.StringVar(value="")
+        self.notes_var = tk.StringVar()
 
         self.account_display_to_code = {}
         self.account_code_to_name = {}
         self.account_code_to_display = {}
+        self.fund_display_to_code = {}
+
         self.beneficiary_display_to_data = {}
 
+        self.ledger_has_vendor_id = False
+        self.ledger_has_customer_id = False
+        self.ledger_has_property_id = False
+
         self.line_items = []
-        self.selected_line_index = None
+
+        self.field_label_width = 15
 
         self._setup_styles()
 
@@ -115,13 +125,19 @@ class ReceiptVoucherScreen:
             ttk.Button(btn_group, text=txt, style=style_name, width=9, command=cmd).pack(side="left", padx=5)
 
     def _build_form_content(self):
-        self.container = ttk.Frame(self.main_card, style="App.Receipt.Content.TFrame", padding=(18, 12))
+        self.container = ttk.Frame(self.main_card, style="App.Receipt.Content.TFrame", padding=(0, 8))
         self.container.pack(fill="both", expand=True)
-        self._build_header_section()
-        self._build_beneficiary_section()
-        self._build_line_editor()
-        self._build_lines_table()
-        self._build_totals_section()
+
+        self.container.grid_columnconfigure(0, weight=1)
+        self.container.grid_rowconfigure(0, weight=0)
+        self.container.grid_rowconfigure(1, weight=0)
+        self.container.grid_rowconfigure(2, weight=0)
+        self.container.grid_rowconfigure(3, weight=7)
+
+        self._build_header_section(row=0)
+        self._build_beneficiary_section(row=1)
+        self._build_notes_section(row=2)
+        self._build_lines_table(row=3)
 
     def _create_compact_field(self, parent, label_text, widget_type="entry", label_width=14, text_height=2, **kwargs):
         container = ttk.Frame(parent, style="App.Receipt.Content.TFrame")
@@ -368,21 +384,25 @@ class ReceiptVoucherScreen:
         self.voucher_type_var.set(VOUCHER_TYPE_RECEIPT)
         self.currency_var.set("ريال يمني")
 
-        self.cash_account_var.set("")
+        self.fund_var.set("الصندوق الرئيسي")
         self.beneficiary_var.set("")
-        self.phone_var.set("")
-        self.related_property_var.set("")
+        self.beneficiary_id_var.set("")
+        self.amount_var.set("0.00")
+        self.amount_words_var.set("")
+        self.notes_var.set("")
 
-        self.txt_desc.delete("1.0", tk.END)
         self._set_date_value(datetime.now().strftime("%Y-%m-%d"))
 
         self.line_items.clear()
-        self._reset_line_editor()
         self._refresh_lines_table()
 
         next_id, next_ref = self._fetch_next_ids()
         self.voucher_id_var.set(next_id)
         self.reference_no_var.set(next_ref)
+
+        default_fund = self._get_default_fund_display()
+        if default_fund:
+            self.combo_fund.set(default_fund)
 
     def load_accounts(self):
         conn = get_connection()
@@ -394,8 +414,7 @@ class ReceiptVoucherScreen:
                 """
                 SELECT account_code, account_name
                 FROM finance.accounts
-                WHERE account_level = 'تحليلي'
-                  AND COALESCE(is_active, true) = true
+                WHERE COALESCE(is_active, true) = true
                 ORDER BY account_code
                 """
             )
@@ -427,77 +446,66 @@ class ReceiptVoucherScreen:
             return
         try:
             cur = conn.cursor()
-            cur.execute("SELECT id, property_name FROM finance.properties ORDER BY property_name")
-            props = cur.fetchall() or []
+            self.beneficiary_display_to_data.clear()
+            values = []
 
-            phone_col = None
-            for col in ("phone", "mobile", "phone_number", "vendor_phone"):
-                if self._table_has_column(cur, "vendors", col):
-                    phone_col = col
+            cur.execute(
+                """
+                SELECT id, customer_name, COALESCE(phone, ''), COALESCE(control_account, %s)
+                FROM finance.customers
+                ORDER BY customer_name
+                """,
+                (CUSTOMER_CONTROL_ACCOUNT_CODE,),
+            )
+            for cid, name, phone, control_code in cur.fetchall() or []:
+                if not name:
+                    continue
+                display = f"عميل: {name}"
+                self.beneficiary_display_to_data[display] = {
+                    "type": "customer",
+                    "customer_id": int(cid),
+                    "vendor_id": None,
+                    "phone": str(phone or ""),
+                    "related_property": "",
+                    "control_account": str(control_code or CUSTOMER_CONTROL_ACCOUNT_CODE).strip(),
+                }
+                values.append(display)
+
+            # Handle legacy vendor schemas that may not include phone/control_account yet.
+            phone_expr = "NULL"
+            for phone_col in ("phone", "mobile", "phone_number", "vendor_phone"):
+                if self._table_has_column(cur, "vendors", phone_col):
+                    phone_expr = f"COALESCE(v.{phone_col}, '')"
                     break
-            phone_select = f"v.{phone_col}" if phone_col else "NULL"
+
+            vendor_control_expr = f"'{VENDOR_CONTROL_ACCOUNT_CODE}'"
+            if self._table_has_column(cur, "vendors", "control_account"):
+                vendor_control_expr = f"COALESCE(v.control_account, '{VENDOR_CONTROL_ACCOUNT_CODE}')"
 
             cur.execute(
                 f"""
-                SELECT v.id, v.vendor_name, {phone_select}, v.property_id, p.property_name
+                SELECT v.id, v.vendor_name, {phone_expr}, {vendor_control_expr}
                 FROM finance.vendors v
-                LEFT JOIN finance.properties p ON p.id = v.property_id
                 ORDER BY v.vendor_name
                 """
             )
-            vendors = cur.fetchall() or []
-
-            cur.execute("SELECT id, group_name FROM finance.vendor_groups ORDER BY group_name")
-            groups = cur.fetchall() or []
-
-            self.beneficiary_display_to_data.clear()
-            values = []
-            prop_map = {pid: (pname or "") for pid, pname in props}
-
-            for vid, name, phone, prop_id, prop_name in vendors:
+            for vid, name, phone, control_code in cur.fetchall() or []:
                 if not name:
                     continue
-                display = f"مورد: {name}"
-                related = prop_name or (prop_map.get(prop_id, "") if prop_id else "")
+                display = f"وارث/مورد: {name}"
                 self.beneficiary_display_to_data[display] = {
                     "type": "vendor",
+                    "customer_id": None,
                     "vendor_id": int(vid),
-                    "property_id": int(prop_id) if prop_id is not None else None,
                     "phone": str(phone or ""),
-                    "related_property": related,
-                }
-                values.append(display)
-
-            for gid, gname in groups:
-                if not gname:
-                    continue
-                display = f"مجموعة موردين: {gname}"
-                self.beneficiary_display_to_data[display] = {
-                    "type": "group",
-                    "group_id": int(gid),
-                    "vendor_id": None,
-                    "property_id": None,
-                    "phone": "",
                     "related_property": "",
-                }
-                values.append(display)
-
-            for pid, pname in props:
-                if not pname:
-                    continue
-                display = f"أرض: {pname}"
-                self.beneficiary_display_to_data[display] = {
-                    "type": "property",
-                    "vendor_id": None,
-                    "property_id": int(pid),
-                    "phone": "",
-                    "related_property": pname,
+                    "control_account": str(control_code or VENDOR_CONTROL_ACCOUNT_CODE).strip(),
                 }
                 values.append(display)
 
             set_combobox_values(self.combo_beneficiary, values)
         except Exception as exc:
-            messagebox.showerror("خطأ", get_db_error_message(exc, "تعذر تحميل المستفيدين"))
+            messagebox.showerror("خطأ", get_db_error_message(exc, "تعذر تحميل العملاء/الموردين"))
         finally:
             conn.close()
 
@@ -523,9 +531,13 @@ class ReceiptVoucherScreen:
     def _line_from_editor(self):
         acc_disp = self.combo_line_account.get().strip()
         code = self.account_display_to_code.get(acc_disp)
+        ben = self.beneficiary_display_to_data.get(self.combo_beneficiary.get().strip(), {})
         if not code:
-            messagebox.showwarning("تنبيه", "اختر حسابا تحليليا صحيحا للبند")
+            code = str(ben.get("control_account") or "").strip()
+        if not code:
+            messagebox.showwarning("تنبيه", "اختر حسابا أو طرفا مرتبطا بحساب تحكم")
             return None
+
         try:
             amt = self._parse_amount(self.line_amount_var.get())
         except Exception:
@@ -667,7 +679,7 @@ class ReceiptVoucherScreen:
         ben_disp = self.combo_beneficiary.get().strip()
         ben = self.beneficiary_display_to_data.get(ben_disp)
         if not ben:
-            messagebox.showwarning("تنبيه", "يرجى اختيار اسم المستفيد")
+            messagebox.showwarning("تنبيه", "يرجى اختيار عميل أو وارث/مورد")
             return None
 
         cash_disp = self.combo_cash_account.get().strip()
@@ -676,18 +688,11 @@ class ReceiptVoucherScreen:
             messagebox.showwarning("تنبيه", "يرجى اختيار حساب النقد / البنك")
             return None
 
-        if cash_code not in self.account_code_to_name:
-            messagebox.showwarning("تنبيه", "حساب النقد / البنك يجب أن يكون تحليلي")
-            return None
-
         if not self.line_items:
             messagebox.showwarning("تنبيه", "يرجى إضافة بنود إلى السند")
             return None
 
         for line in self.line_items:
-            if line.get("account_code") not in self.account_code_to_name:
-                messagebox.showwarning("تنبيه", "كل بنود السند يجب أن تكون بحسابات تحليلية")
-                return None
             if float(line.get("amount", 0) or 0) <= 0:
                 messagebox.showwarning("تنبيه", "يجب أن تكون كل مبالغ البنود أكبر من صفر")
                 return None
@@ -698,6 +703,31 @@ class ReceiptVoucherScreen:
             return None
 
         return {"beneficiary": ben, "cash_account_code": cash_code, "total_amount": total}
+
+    def _refresh_ledger_columns(self, cur):
+        self.ledger_has_vendor_id = self._table_has_column(cur, "ledger", "vendor_id")
+        self.ledger_has_customer_id = self._table_has_column(cur, "ledger", "customer_id")
+        self.ledger_has_property_id = self._table_has_column(cur, "ledger", "property_id")
+
+    def _insert_ledger_row(self, cur, *, voucher_id, account_code, debit, credit, line_description, posting_date, vendor_id=None, customer_id=None):
+        cols = ["voucher_id", "account_code", "debit", "credit", "line_description", "posting_date"]
+        vals = [voucher_id, account_code, debit, credit, line_description, posting_date]
+
+        if self.ledger_has_vendor_id:
+            cols.append("vendor_id")
+            vals.append(vendor_id)
+        if self.ledger_has_customer_id:
+            cols.append("customer_id")
+            vals.append(customer_id)
+        if self.ledger_has_property_id:
+            cols.append("property_id")
+            vals.append(None)
+
+        placeholders = ", ".join(["%s"] * len(cols))
+        cur.execute(
+            f"INSERT INTO finance.ledger ({', '.join(cols)}) VALUES ({placeholders})",
+            tuple(vals),
+        )
 
     def save_voucher(self, is_update=False):
         valid = self._validate_before_save()
@@ -715,20 +745,46 @@ class ReceiptVoucherScreen:
             if not conn:
                 return
             cur = conn.cursor()
+            self._refresh_ledger_columns(cur)
 
             if is_update:
                 if not vid_text.isdigit():
                     messagebox.showwarning("تنبيه", "رقم السند غير صالح للتعديل")
                     return
+
                 vid = int(vid_text)
+
+                update_voucher_sql = """
+                    UPDATE finance.vouchers
+                    SET reference_no = %s,
+                        v_type = %s,
+                        v_date = %s,
+                        description = %s
+                    WHERE id = %s
+                """
                 cur.execute(
-                    "UPDATE finance.vouchers SET reference_no=%s, v_type=%s, v_date=%s, description=%s WHERE id=%s",
+                    update_voucher_sql,
                     (ref_no, VOUCHER_TYPE_RECEIPT, date, desc, vid),
                 )
-                cur.execute("DELETE FROM finance.ledger WHERE voucher_id=%s", (vid,))
+
+                delete_ledger_sql = """
+                    DELETE FROM finance.ledger
+                    WHERE voucher_id = %s
+                """
+                cur.execute(delete_ledger_sql, (vid,))
             else:
+                insert_voucher_sql = """
+                    INSERT INTO finance.vouchers (
+                        reference_no,
+                        v_type,
+                        v_date,
+                        description
+                    )
+                    VALUES (%s, %s, %s, %s)
+                    RETURNING id
+                """
                 cur.execute(
-                    "INSERT INTO finance.vouchers (reference_no, v_type, v_date, description) VALUES (%s, %s, %s, %s) RETURNING id",
+                    insert_voucher_sql,
                     (ref_no, VOUCHER_TYPE_RECEIPT, date, desc),
                 )
                 vid = cur.fetchone()[0]
@@ -736,21 +792,35 @@ class ReceiptVoucherScreen:
 
             ben = valid["beneficiary"]
             vendor_id = ben.get("vendor_id")
-            property_id = ben.get("property_id")
+            customer_id = ben.get("customer_id")
+            counterparty_control_code = str(ben.get("control_account") or "").strip()
             cash_code = valid["cash_account_code"]
             total_amt = valid["total_amount"]
 
-            # سند القبض: نقد/بنك مدين
-            cur.execute(
-                "INSERT INTO finance.ledger (voucher_id, account_code, vendor_id, property_id, debit, credit, line_description, posting_date) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
-                (vid, cash_code, None, None, total_amt, 0, desc or "سند قبض", date),
+            # voucher_id and account_code are always provided explicitly for ledger inserts.
+            self._insert_ledger_row(
+                cur,
+                voucher_id=vid,
+                account_code=cash_code,
+                vendor_id=None,
+                customer_id=None,
+                debit=total_amt,
+                credit=0,
+                line_description=desc or "سند قبض",
+                posting_date=date,
             )
 
-            # بنود السند: دائن
             for line in self.line_items:
-                cur.execute(
-                    "INSERT INTO finance.ledger (voucher_id, account_code, vendor_id, property_id, debit, credit, line_description, posting_date) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
-                    (vid, line["account_code"], vendor_id, property_id, 0, line["amount"], line.get("description", ""), date),
+                self._insert_ledger_row(
+                    cur,
+                    voucher_id=vid,
+                    account_code=counterparty_control_code or line["account_code"],
+                    vendor_id=vendor_id,
+                    customer_id=customer_id,
+                    debit=0,
+                    credit=line["amount"],
+                    line_description=line.get("description", ""),
+                    posting_date=date,
                 )
 
             conn.commit()
@@ -774,6 +844,7 @@ class ReceiptVoucherScreen:
 
         try:
             cur = conn.cursor()
+            self._refresh_ledger_columns(cur)
             cur.execute(
                 "SELECT id, COALESCE(reference_no, ''), v_date, description FROM finance.vouchers WHERE id=%s AND v_type=%s",
                 (voucher_id, VOUCHER_TYPE_RECEIPT),
@@ -789,19 +860,31 @@ class ReceiptVoucherScreen:
             self.txt_desc.delete("1.0", tk.END)
             self.txt_desc.insert("1.0", row[3] or "")
 
-            cur.execute("SELECT account_code, debit, credit, line_description, vendor_id, property_id FROM finance.ledger WHERE voucher_id=%s ORDER BY id", (voucher_id,))
-            ledger_rows = cur.fetchall()
+            select_cols = ["account_code", "debit", "credit", "line_description"]
+            if self.ledger_has_vendor_id:
+                select_cols.append("vendor_id")
+            if self.ledger_has_customer_id:
+                select_cols.append("customer_id")
+            cur.execute(
+                f"SELECT {', '.join(select_cols)} FROM finance.ledger WHERE voucher_id=%s ORDER BY id",
+                (voucher_id,),
+            )
+            ledger_rows = cur.fetchall() or []
 
             self.line_items.clear()
             beneficiary_set = False
             cash_set = False
 
-            for acc_code, debit, credit, line_desc, vend_id, prop_id in ledger_rows:
-                acc_code = str(acc_code or "")
-                debit = float(debit or 0)
-                credit = float(credit or 0)
+            for row_data in ledger_rows:
+                acc_code = str(row_data[0] or "")
+                debit = float(row_data[1] or 0)
+                credit = float(row_data[2] or 0)
+                line_desc = row_data[3] or ""
+                idx = 4
+                vend_id = row_data[idx] if self.ledger_has_vendor_id else None
+                idx += 1 if self.ledger_has_vendor_id else 0
+                cust_id = row_data[idx] if self.ledger_has_customer_id else None
 
-                # سطر النقد/البنك في سند القبض يكون مدين
                 if debit > 0 and credit == 0 and not cash_set:
                     disp = self.account_code_to_display.get(acc_code, "")
                     if disp:
@@ -821,12 +904,12 @@ class ReceiptVoucherScreen:
                         "exchange_rate": 1.0,
                         "voucher_number": str(voucher_id),
                         "voucher_type": VOUCHER_TYPE_RECEIPT,
-                        "description": line_desc or "",
+                        "description": line_desc,
                     }
                 )
 
-                if not beneficiary_set and (vend_id or prop_id):
-                    disp = self._resolve_beneficiary_display(vend_id, prop_id)
+                if not beneficiary_set and (vend_id or cust_id):
+                    disp = self._resolve_beneficiary_display(vend_id, cust_id)
                     if disp:
                         self.combo_beneficiary.set(disp)
                         self._on_beneficiary_selected()
@@ -841,12 +924,11 @@ class ReceiptVoucherScreen:
         finally:
             conn.close()
 
-    def _resolve_beneficiary_display(self, vendor_id, property_id):
+    def _resolve_beneficiary_display(self, vendor_id, customer_id):
         for disp, data in self.beneficiary_display_to_data.items():
-            if vendor_id is not None and data.get("type") == "vendor" and int(data.get("vendor_id", 0) or 0) == int(vendor_id):
+            if customer_id is not None and data.get("type") == "customer" and int(data.get("customer_id", 0) or 0) == int(customer_id):
                 return disp
-            prop = data.get("property_id")
-            if prop is not None and int(prop) == int(property_id):
+            if vendor_id is not None and data.get("type") == "vendor" and int(data.get("vendor_id", 0) or 0) == int(vendor_id):
                 return disp
         return ""
 

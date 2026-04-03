@@ -3,7 +3,13 @@ from tkinter import messagebox
 
 import ttkbootstrap as ttk
 
-from app_constants import ACCOUNT_LEVELS, SYSTEM_NAME
+from app_constants import (
+    ACCOUNT_LEVELS,
+    ACCOUNT_LEVEL_ANALYTICAL,
+    CUSTOMER_CONTROL_ACCOUNT_CODE,
+    SYSTEM_NAME,
+    VENDOR_CONTROL_ACCOUNT_CODE,
+)
 from combobox_helper import bind_searchable_combobox, set_combobox_values
 from db_connection import get_connection, get_db_error_message
 
@@ -193,12 +199,34 @@ class ChartOfAccountsScreen:
         try:
             with conn:
                 with conn.cursor() as cur:
+                    # Keep the COA tree focused on financial categories/control accounts,
+                    # and hide old leaf accounts created from vendor/customer names.
                     cur.execute(
                         """
-                        SELECT account_code, account_name, parent_code, account_type, account_level, nature
-                        FROM finance.accounts
-                        ORDER BY account_code ASC
-                        """
+                        SELECT a.account_code, a.account_name, a.parent_code, a.account_type, a.account_level, a.nature
+                        FROM finance.accounts a
+                        WHERE COALESCE(a.is_active, true) = true
+                          AND (
+                            a.account_level <> %s
+                            OR TRIM(a.account_code) IN (%s, %s)
+                          )
+                          AND NOT EXISTS (
+                            SELECT 1
+                            FROM finance.vendors v
+                            WHERE LOWER(TRIM(v.vendor_name)) = LOWER(TRIM(a.account_name))
+                          )
+                          AND NOT EXISTS (
+                            SELECT 1
+                            FROM finance.customers c
+                            WHERE LOWER(TRIM(c.customer_name)) = LOWER(TRIM(a.account_name))
+                          )
+                        ORDER BY a.account_code ASC
+                        """,
+                        (
+                            ACCOUNT_LEVEL_ANALYTICAL,
+                            CUSTOMER_CONTROL_ACCOUNT_CODE,
+                            VENDOR_CONTROL_ACCOUNT_CODE,
+                        ),
                     )
                     rows = cur.fetchall() or []
 
