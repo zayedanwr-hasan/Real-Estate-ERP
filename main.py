@@ -6,11 +6,12 @@ from properties_screen import PropertyScreen
 from payment_vouchers import PaymentVoucherScreen
 from receipt_vouchers import ReceiptVoucherScreen
 from chart_of_accounts import ChartOfAccountsScreen
-from subcoding_opening_balances_refactored import SubCodingOpeningBalances
-from vendor_groups_screen import VendorGroupsScreen
 from adjustment_journal import SettlementEntryScreen
 from reports_screen import ReportsScreen
 from app_constants import SYSTEM_NAME
+from customers_screen import CustomersScreen
+from vendors_screen import VendorsScreen
+from fund_coding_screen import FundCodingScreen
 
 
 class RealEstateApp:
@@ -35,6 +36,8 @@ class RealEstateApp:
         self._reports_root_expanded = False
         self._expanded_report_section = None
         self._report_section_widgets = {}
+        self._coding_root_expanded = False
+        self._coding_widgets = {}
 
         self.report_sections = {
             "تقارير الورثة": ["كشف حساب وارث", "ملخص وارث", "أرصدة الورثة"],
@@ -298,6 +301,51 @@ class RealEstateApp:
         widgets["button"].configure(text=f"▼ {section_name}")
         self._expanded_report_section = section_name
 
+    def _build_coding_accordion(self, parent):
+        coding_wrap = tb.Frame(parent, style="App.Sidebar.TFrame")
+        coding_wrap.pack(fill="x", padx=10, pady=6)
+
+        self.btn_coding_root = ttk.Button(
+            coding_wrap,
+            text="▶ 🧭 شاشات الترميز",
+            style="App.Sidebar.TButton",
+            cursor="hand2",
+            command=self._toggle_coding_root,
+        )
+        self.btn_coding_root._default_style = "App.Sidebar.TButton"
+        self.btn_coding_root.pack(fill="x")
+
+        self.coding_container = tb.Frame(coding_wrap, style="App.Sidebar.TFrame")
+
+        coding_items = [
+            ("ترميز العملاء", self.open_customers),
+            ("ترميز الموردين", self.open_vendors),
+            ("ترميز الصناديق", self.open_funds_coding),
+        ]
+
+        for title, callback in coding_items:
+            row = tb.Frame(self.coding_container, style="App.Sidebar.TFrame")
+            row.pack(fill="x", padx=14, pady=1)
+            btn = ttk.Button(row, text=f"- {title}", style="App.SidebarSub.TButton", cursor="hand2")
+            btn._default_style = "App.SidebarSub.TButton"
+            btn.configure(command=lambda b=btn, c=callback: (self._set_active_sidebar_button(b), c()))
+            btn.pack(fill="x")
+            self._coding_widgets[title] = btn
+
+    def _toggle_coding_root(self, force_expand=False):
+        if force_expand:
+            self._coding_root_expanded = False
+
+        if self._coding_root_expanded:
+            self.coding_container.pack_forget()
+            self.btn_coding_root.configure(text="▶ 🧭 شاشات الترميز")
+            self._coding_root_expanded = False
+            return
+
+        self.coding_container.pack(fill="x", pady=(2, 0))
+        self.btn_coding_root.configure(text="▼ 🧭 شاشات الترميز")
+        self._coding_root_expanded = True
+
     def create_menu(self):
         self._create_nav_button(self.sidebar, "🏢 إدارة الأراضي", self.open_properties)
         ttk.Separator(self.sidebar).pack(fill="x", padx=20, pady=3)
@@ -305,10 +353,8 @@ class RealEstateApp:
         self._create_nav_button(self.sidebar, "📁 دليل الحسابات", self.open_accounts)
         ttk.Separator(self.sidebar).pack(fill="x", padx=20, pady=3)
 
-        self._create_nav_button(self.sidebar, "🧩 مجموعات الموردين", self.open_vendor_groups)
-        ttk.Separator(self.sidebar).pack(fill="x", padx=20, pady=3)
-
-        self._create_nav_button(self.sidebar, "🔗 الترميز الفرعي", self.open_sub_coding)
+        self._build_coding_accordion(self.sidebar)
+        self._toggle_coding_root(force_expand=True)
         ttk.Separator(self.sidebar).pack(fill="x", padx=20, pady=3)
 
         self._create_nav_button(self.sidebar, "📤 سند صرف نقدي", self.open_payment_voucher)
@@ -372,14 +418,6 @@ class RealEstateApp:
         self.clear_display_area()
         self.current_page = ChartOfAccountsScreen(self.display_area)
 
-    def open_sub_coding(self):
-        self.clear_display_area()
-        self.current_page = SubCodingOpeningBalances(self.display_area)
-
-    def open_vendor_groups(self):
-        self.clear_display_area()
-        self.current_page = VendorGroupsScreen(self.display_area)
-
     def open_adjustment_journal(self):
         self.clear_display_area()
         self.current_page = SettlementEntryScreen(self.display_area)
@@ -403,6 +441,17 @@ class RealEstateApp:
         self.current_page = ReportsScreen(self.display_area)
         self.current_page.open_report(report_name)
 
+    def open_customers(self):
+        self.clear_display_area()
+        self.current_page = CustomersScreen(self.display_area)
+
+    def open_vendors(self):
+        self.clear_display_area()
+        self.current_page = VendorsScreen(self.display_area)
+
+    def open_funds_coding(self):
+        self.clear_display_area()
+        self.current_page = FundCodingScreen(self.display_area)
 
     def dummy_msg(self):
         messagebox.showinfo("الإعدادات", "خاص بالمدير")
