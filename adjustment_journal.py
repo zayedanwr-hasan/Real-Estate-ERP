@@ -1,11 +1,12 @@
 import tkinter as tk
 from datetime import datetime
+from difflib import SequenceMatcher
 from tkinter import messagebox, simpledialog
 
 import ttkbootstrap as ttk
 
 from app_constants import SYSTEM_NAME
-from combobox_helper import bind_searchable_combobox, set_combobox_values
+from combobox_helper import set_combobox_values
 from db_connection import get_connection, get_db_error_message
 
 
@@ -34,6 +35,8 @@ class SettlementEntryScreen:
 
         self.vendor_display_to_id = {}
         self.vendor_id_to_display = {}
+        self.customer_display_to_id = {}
+        self.customer_id_to_display = {}
 
         self.property_display_to_id = {}
         self.property_id_to_display = {}
@@ -44,6 +47,7 @@ class SettlementEntryScreen:
         self.currency_var = tk.StringVar(value="ريال يمني")
         self.exchange_rate_var = tk.StringVar(value="1.00")
         self.general_desc_var = tk.StringVar()
+        self.entry_type_var = tk.StringVar(value=self.VOUCHER_TYPE)
 
         self.customer_chk_var = tk.BooleanVar(value=False)
         self.vendor_chk_var = tk.BooleanVar(value=False)
@@ -62,6 +66,7 @@ class SettlementEntryScreen:
         self.total_credit_var = tk.StringVar(value="0.00")
         self.diff_var = tk.StringVar(value="0.00")
         self.status_var = tk.StringVar(value="غير متوازن")
+        self._lookup_popups = {}
 
         self._setup_styles()
         self._build_layout()
@@ -141,10 +146,9 @@ class SettlementEntryScreen:
         self.content = ttk.Frame(self.main_card, style="Settlement.Content.TFrame", padding=(14, 10))
         self.content.pack(fill="both", expand=True)
         self.content.grid_columnconfigure(0, weight=1)
-        self.content.grid_rowconfigure(3, weight=1)
+        self.content.grid_rowconfigure(2, weight=1)
 
         self._build_header_section()
-        self._build_general_description()
         self._build_line_editor()
         self._build_table()
         self._build_footer()
@@ -183,71 +187,229 @@ class SettlementEntryScreen:
         ttk.Label(box, text=label_text, style="Settlement.FieldLabel.TLabel", width=label_width).pack(side="right")
         return field
 
+    def _grid_compact_field(self, parent, row, column, label_text, widget_type="entry", label_width=10, **kwargs):
+        box = ttk.Frame(parent, style="Settlement.Content.TFrame")
+        box.grid(row=row, column=column, sticky="ew", padx=6, pady=5)
+
+        label_width = max(label_width, len(str(label_text).replace(" ", "")) + 2)
+        if widget_type == "entry":
+            field = ttk.Entry(box, style="Settlement.Field.TEntry", justify="right", **kwargs)
+        else:
+            field = ttk.Combobox(box, style="Settlement.Field.TCombobox", justify="right", **kwargs)
+
+        field.pack(side="left", fill="x", expand=True, padx=(0, 10), pady=1, ipady=2)
+        ttk.Label(box, text=label_text, style="Settlement.FieldLabel.TLabel", width=label_width).pack(side="right")
+        return field
+
+    def _lookup_values(self, widget):
+        try:
+            values = list(widget.cget("values") or [])
+        except Exception:
+            values = []
+        return [str(v).strip() for v in values if str(v).strip()]
+
+    def _lookup_match_values(self, values, query):
+        q = (query or "").strip().lower()
+        if not q:
+            return list(values)
+
+        scored = []
+        for item in values:
+            text = str(item)
+            low = text.lower()
+            score = 0.0
+            if low == q:
+                score += 100
+            if low.startswith(q):
+                score += 60
+            if q in low:
+                score += 35
+            tokens = [t for t in q.split() if t]
+            if tokens and all(t in low for t in tokens):
+                score += 25
+            score += SequenceMatcher(None, q, low).ratio() * 20
+            if score > 0:
+                scored.append((score, text))
+
+        scored.sort(key=lambda x: (-x[0], x[1]))
+        return [text for _score, text in scored]
+
+    def _bind_lookup_popup(self, widget, popup_key, title, on_pick, values_provider=None):
+        def open_popup(_event=None, force=False):
+            try:
+                if str(widget.cget("state")) == "disabled":
+                    return
+            except Exception:
+                pass
+
+            query = widget.get().strip()
+            state = self._lookup_popups.get(popup_key)
+            if state and state.get("window") and state["window"].winfo_exists():
+                state["query_var"].set(query)
+                state["window"].lift()
+                state["search_entry"].focus_set()
+                return
+
+            values = values_provider() if callable(values_provider) else self._lookup_values(widget)
+            if not values:
+                return
+
+            win = tk.Toplevel(self.master)
+            win.title(title)
+            win.geometry("620x420")
+            win.transient(self.master)
+            win.grab_set()
+
+            panel = ttk.Frame(win)
+            panel.pack(fill="both", expand=True, padx=10, pady=10)
+            panel.grid_columnconfigure(0, weight=1)
+            panel.grid_rowconfigure(1, weight=1)
+
+            query_var = tk.StringVar(value=query)
+            search_entry = ttk.Entry(panel, textvariable=query_var, justify="right")
+            search_entry.grid(row=0, column=0, sticky="ew", pady=(0, 8))
+
+            tree = ttk.Treeview(panel, columns=("value",), show="headings", selectmode="browse")
+            tree.heading("value", text="اختر", anchor="e")
+            tree.column("value", width=560, anchor="e", stretch=True)
+            tree.grid(row=1, column=0, sticky="nsew")
+
+            yscroll = ttk.Scrollbar(panel, orient="vertical", command=tree.yview)
+            tree.configure(yscrollcommand=yscroll.set)
+            yscroll.grid(row=1, column=1, sticky="ns")
+
+            def refill(*_):
+                matches = self._lookup_match_values(values, query_var.get())
+                tree.delete(*tree.get_children())
+                for item in matches:
+                    tree.insert("", tk.END, values=(item,))
+                children = tree.get_children()
+                if children:
+                    tree.selection_set(children[0])
+                    tree.focus(children[0])
+
+            def choose(_event=None):
+                sel = tree.selection()
+                if not sel:
+                    return
+                value = tree.item(sel[0])["values"][0]
+                on_pick(value)
+                close()
+
+            def close():
+                try:
+                    self._lookup_popups.pop(popup_key, None)
+                except Exception:
+                    pass
+                try:
+                    win.grab_release()
+                except Exception:
+                    pass
+                try:
+                    win.destroy()
+                except Exception:
+                    pass
+
+            query_var.trace_add("write", refill)
+            search_entry.bind("<Return>", choose)
+            search_entry.bind("<Escape>", lambda _e: close())
+            tree.bind("<Double-1>", choose)
+            win.protocol("WM_DELETE_WINDOW", close)
+
+            self._lookup_popups[popup_key] = {
+                "window": win,
+                "query_var": query_var,
+                "search_entry": search_entry,
+            }
+            refill()
+            search_entry.focus_set()
+
+        def on_click(_event=None):
+            self.master.after_idle(lambda: open_popup(force=True))
+
+        def on_key(_event=None):
+            try:
+                if str(widget.cget("state")) == "disabled":
+                    return
+            except Exception:
+                pass
+            if _event and _event.keysym in {"Tab", "Shift_L", "Shift_R", "Control_L", "Control_R", "Alt_L", "Alt_R", "Escape", "Up", "Down", "Left", "Right"}:
+                return
+            open_popup(force=True)
+
+        # Do not auto-open on FocusIn; open only on explicit user click/typing.
+        widget.bind("<KeyRelease>", on_key, add="+")
+        widget.bind("<Button-1>", on_click, add="+")
+
     def _build_header_section(self):
         wrap = ttk.Labelframe(self.content, text=" بيانات القيد ", style="Settlement.Section.TLabelframe", padding=8)
-        wrap.grid(row=0, column=0, sticky="ew", pady=(0, 6))
+        wrap.grid(row=0, column=0, sticky="ew", pady=(0, 5))
 
-        right = ttk.Frame(wrap, style="Settlement.Content.TFrame")
-        right.pack(side="right", fill="both", expand=True, padx=(6, 0))
-        left = ttk.Frame(wrap, style="Settlement.Content.TFrame")
-        left.pack(side="left", fill="both", expand=True, padx=(0, 6))
+        # Internal-only widget so existing property DB loading remains intact.
+        self.combo_property = ttk.Combobox(wrap, textvariable=self.property_var, style="Settlement.Field.TCombobox", justify="right", state="disabled")
 
-        r1 = ttk.Frame(right, style="Settlement.Content.TFrame")
-        r1.pack(fill="x")
-        self.ent_voucher_id = self._compact_field(r1, "رقم القيد :", textvariable=self.voucher_id_var, state="readonly")
-        self.ent_ref = self._compact_field(r1, "رقم المرجع :", textvariable=self.reference_no_var, state="readonly")
-        self.ent_date = self._create_date_field(r1, "التاريخ :")
+        # Two compact rows to avoid Arabic label truncation/overlap.
+        for i in range(3):
+            wrap.grid_columnconfigure(i, weight=1)
 
-        r2 = ttk.Frame(right, style="Settlement.Content.TFrame")
-        r2.pack(fill="x")
-        self.combo_currency = self._compact_field(
-            r2,
+        self.ent_entry_type = self._grid_compact_field(
+            wrap,
+            0,
+            2,
+            "نوع القيد :",
+            textvariable=self.entry_type_var,
+            state="readonly",
+            label_width=14,
+        )
+        self.ent_voucher_id = self._grid_compact_field(
+            wrap,
+            0,
+            1,
+            "رقم القيد :",
+            textvariable=self.voucher_id_var,
+            state="readonly",
+            label_width=14,
+        )
+
+        date_holder = ttk.Frame(wrap, style="Settlement.Content.TFrame")
+        date_holder.grid(row=0, column=0, sticky="ew", padx=8, pady=6)
+        date_class = getattr(ttk, "DateEntry", None)
+        if date_class:
+            self.ent_date = date_class(date_holder, bootstyle="primary", dateformat="%Y-%m-%d")
+            self.ent_date.entry.configure(justify="right", font=("Segoe UI", 10, "bold"))
+        else:
+            self.ent_date = ttk.Entry(date_holder, textvariable=self.voucher_date_var, style="Settlement.Field.TEntry", justify="right")
+        self.ent_date.pack(side="left", fill="x", expand=True, padx=(0, 10), pady=1, ipady=2)
+        ttk.Label(date_holder, text="التاريخ :", style="Settlement.FieldLabel.TLabel", width=14).pack(side="right")
+
+        self.ent_ref = self._grid_compact_field(
+            wrap,
+            1,
+            2,
+            "رقم المرجع :",
+            textvariable=self.reference_no_var,
+            state="readonly",
+            label_width=14,
+        )
+        self.combo_currency = self._grid_compact_field(
+            wrap,
+            1,
+            1,
             "العملة :",
             widget_type="combo",
             textvariable=self.currency_var,
             state="readonly",
             values=("ريال يمني", "ريال سعودي", "دولار"),
+            label_width=14,
         )
-        self.ent_exchange = self._compact_field(r2, "سعر الصرف :", textvariable=self.exchange_rate_var)
-
-        l1 = ttk.Frame(left, style="Settlement.Content.TFrame")
-        l1.pack(fill="x")
-        ttk.Checkbutton(
-            l1,
-            text="تحديد عميل",
-            variable=self.customer_chk_var,
-            style="Settlement.Check.TCheckbutton",
-            command=self._on_customer_toggle,
-        ).pack(side="right", padx=(8, 4))
-        self.combo_customer = ttk.Combobox(l1, textvariable=self.customer_var, style="Settlement.Field.TCombobox", justify="right", state="disabled")
-        self.combo_customer.pack(side="right", fill="x", expand=True, padx=(0, 8))
-        bind_searchable_combobox(self.combo_customer)
-        ttk.Button(l1, text="اختيار", style="Settlement.Orange.TButton", width=8, command=self._pick_customer).pack(side="right")
-
-        l2 = ttk.Frame(left, style="Settlement.Content.TFrame")
-        l2.pack(fill="x")
-        ttk.Checkbutton(
-            l2,
-            text="تحديد مورد",
-            variable=self.vendor_chk_var,
-            style="Settlement.Check.TCheckbutton",
-            command=self._on_vendor_toggle,
-        ).pack(side="right", padx=(8, 4))
-        self.combo_vendor = ttk.Combobox(l2, textvariable=self.vendor_var, style="Settlement.Field.TCombobox", justify="right", state="disabled")
-        self.combo_vendor.pack(side="right", fill="x", expand=True, padx=(0, 8))
-        bind_searchable_combobox(self.combo_vendor)
-        ttk.Button(l2, text="اختيار", style="Settlement.Orange.TButton", width=8, command=self._pick_vendor).pack(side="right")
-
-        l3 = ttk.Frame(left, style="Settlement.Content.TFrame")
-        l3.pack(fill="x")
-        self.combo_property = self._compact_field(
-            l3,
-            "العقار (اختياري) :",
-            widget_type="combo",
-            textvariable=self.property_var,
-            state="readonly",
+        self.ent_exchange = self._grid_compact_field(
+            wrap,
+            1,
+            0,
+            "سعر الصرف :",
+            textvariable=self.exchange_rate_var,
+            label_width=14,
         )
-        bind_searchable_combobox(self.combo_property)
 
     def _build_general_description(self):
         box = ttk.Labelframe(self.content, text=" البيان العام ", style="Settlement.Section.TLabelframe", padding=8)
@@ -258,72 +420,109 @@ class SettlementEntryScreen:
 
     def _build_line_editor(self):
         editor = ttk.Labelframe(self.content, text=" إدخال الحركة ", style="Settlement.Section.TLabelframe", padding=8)
-        editor.grid(row=2, column=0, sticky="ew", pady=(0, 6))
+        editor.grid(row=1, column=0, sticky="ew", pady=(0, 5))
+        editor.grid_columnconfigure(0, weight=3)  # left side: customer/vendor
+        editor.grid_columnconfigure(1, weight=7)  # right side: account + amounts
 
-        for i in range(6):
-            editor.grid_columnconfigure(i, weight=1)
+        left_col = ttk.Frame(editor, style="Settlement.Content.TFrame")
+        left_col.grid(row=0, column=0, sticky="nsew", padx=(0, 5), pady=5)
+        left_col.grid_columnconfigure(0, weight=1)
 
-        labels = ["الحساب", "كود الحساب", "اسم الحساب", "مدين", "دائن", "الوصف"]
-        for idx, txt in enumerate(labels):
-            ttk.Label(editor, text=txt, style="Settlement.FieldLabel.TLabel").grid(row=0, column=idx, sticky="ew", padx=2, pady=(0, 4))
+        right_col = ttk.Frame(editor, style="Settlement.Content.TFrame")
+        right_col.grid(row=0, column=1, sticky="nsew", padx=(5, 0), pady=5)
+        right_col.grid_columnconfigure(0, weight=1)
 
-        self.combo_line_account = ttk.Combobox(
-            editor,
-            textvariable=self.line_account_var,
-            style="Settlement.Field.TCombobox",
-            justify="right",
-            state="normal",
-        )
-        self.combo_line_account.grid(row=1, column=0, sticky="ew", padx=2)
-        bind_searchable_combobox(self.combo_line_account)
+        # Right row 1: account number next to account name (account number narrower).
+        account_row = ttk.Frame(right_col, style="Settlement.Content.TFrame")
+        account_row.grid(row=0, column=0, sticky="ew", padx=2, pady=2)
+        account_row.grid_columnconfigure(0, weight=4)  # account name wider
+        account_row.grid_columnconfigure(1, weight=2)  # account number narrower
 
-        self.ent_line_code = ttk.Entry(
-            editor,
-            textvariable=self.line_account_code_var,
-            style="Settlement.Field.TEntry",
-            justify="right",
-            state="readonly",
-        )
-        self.ent_line_code.grid(row=1, column=1, sticky="ew", padx=2)
-
-        self.ent_line_name = ttk.Entry(
-            editor,
+        name_box = ttk.Frame(account_row, style="Settlement.Content.TFrame")
+        name_box.grid(row=0, column=0, sticky="ew", padx=2)
+        name_box.grid_columnconfigure(0, weight=1)
+        self.ent_line_name = self._grid_compact_field(
+            name_box,
+            0,
+            0,
+            "اسم الحساب",
             textvariable=self.line_account_name_var,
-            style="Settlement.Field.TEntry",
-            justify="right",
-            state="readonly",
+            label_width=11,
         )
-        self.ent_line_name.grid(row=1, column=2, sticky="ew", padx=2)
 
-        self.ent_line_debit = ttk.Entry(editor, textvariable=self.line_debit_var, style="Settlement.Field.TEntry", justify="right")
-        self.ent_line_debit.grid(row=1, column=3, sticky="ew", padx=2)
+        account_box = ttk.Frame(account_row, style="Settlement.Content.TFrame")
+        account_box.grid(row=0, column=1, sticky="ew", padx=2)
+        account_box.grid_columnconfigure(0, weight=1)
+        self.combo_line_account = self._grid_compact_field(
+            account_box,
+            0,
+            0,
+            "رقم الحساب",
+            widget_type="combo",
+            textvariable=self.line_account_var,
+            state="normal",
+            width=14,
+            label_width=11,
+        )
 
-        self.ent_line_credit = ttk.Entry(editor, textvariable=self.line_credit_var, style="Settlement.Field.TEntry", justify="right")
-        self.ent_line_credit.grid(row=1, column=4, sticky="ew", padx=2)
+        # Right row 2: debit and credit directly under account fields.
+        amount_row = ttk.Frame(right_col, style="Settlement.Content.TFrame")
+        amount_row.grid(row=1, column=0, sticky="ew", padx=2, pady=2)
+        amount_row.grid_columnconfigure(0, weight=1)
+        amount_row.grid_columnconfigure(1, weight=1)
 
-        self.ent_line_desc = ttk.Entry(editor, textvariable=self.line_desc_var, style="Settlement.Field.TEntry", justify="right")
-        self.ent_line_desc.grid(row=1, column=5, sticky="ew", padx=2)
+        debit_box = ttk.Frame(amount_row, style="Settlement.Content.TFrame")
+        debit_box.grid(row=0, column=1, sticky="ew", padx=2)
+        debit_box.grid_columnconfigure(0, weight=1)
+        self.ent_line_debit = self._grid_compact_field(debit_box, 0, 0, "مبلغ المدين", textvariable=self.line_debit_var, label_width=11)
+
+        credit_box = ttk.Frame(amount_row, style="Settlement.Content.TFrame")
+        credit_box.grid(row=0, column=0, sticky="ew", padx=2)
+        credit_box.grid_columnconfigure(0, weight=1)
+        self.ent_line_credit = self._grid_compact_field(credit_box, 0, 0, "مبلغ الدائن", textvariable=self.line_credit_var, label_width=11)
+
+        # Left side: customer/vendor opposite the right-side fields.
+        customer_box = ttk.Frame(left_col, style="Settlement.Content.TFrame")
+        customer_box.grid(row=0, column=0, sticky="ew", padx=2, pady=2)
+        self.combo_customer = ttk.Combobox(customer_box, textvariable=self.customer_var, style="Settlement.Field.TCombobox", justify="right", state="disabled")
+        self.combo_customer.pack(side="left", fill="x", expand=True, padx=(0, 10), pady=1, ipady=2)
+        ttk.Checkbutton(customer_box, text="تحديد عميل", variable=self.customer_chk_var, style="Settlement.Check.TCheckbutton", command=self._on_customer_toggle).pack(side="right")
+
+        vendor_box = ttk.Frame(left_col, style="Settlement.Content.TFrame")
+        vendor_box.grid(row=1, column=0, sticky="ew", padx=2, pady=2)
+        self.combo_vendor = ttk.Combobox(vendor_box, textvariable=self.vendor_var, style="Settlement.Field.TCombobox", justify="right", state="disabled")
+        self.combo_vendor.pack(side="left", fill="x", expand=True, padx=(0, 10), pady=1, ipady=2)
+        ttk.Checkbutton(vendor_box, text="تحديد مورد", variable=self.vendor_chk_var, style="Settlement.Check.TCheckbutton", command=self._on_vendor_toggle).pack(side="right")
+
+
+        stmt = ttk.Frame(editor, style="Settlement.Content.TFrame")
+        stmt.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(5, 0))
+        stmt.grid_columnconfigure(0, weight=1)
+        ttk.Label(stmt, text="البيان", style="Settlement.FieldLabel.TLabel", width=12).pack(side="right")
+        self.txt_line_desc = tk.Text(stmt, height=3, wrap="word", font=("Segoe UI", 10, "bold"), relief="solid", bd=1)
+        self.txt_line_desc.pack(side="left", fill="x", expand=True, padx=(0, 10), pady=1)
 
     def _build_table(self):
         box = ttk.Frame(self.content, style="Settlement.Content.TFrame")
-        box.grid(row=3, column=0, sticky="nsew")
+        box.grid(row=2, column=0, sticky="nsew")
         box.grid_columnconfigure(0, weight=1)
         box.grid_rowconfigure(0, weight=1)
 
-        cols = ("account_code", "account_name", "debit", "credit", "description")
+        # Reversed visual order so RTL starts from the right with account code.
+        cols = ("credit", "debit", "description", "account_name", "account_code")
         self.tree = ttk.Treeview(box, columns=cols, show="headings", style="Settlement.Treeview", selectmode="browse")
 
-        self.tree.heading("account_code", text="Account Code", anchor="e")
-        self.tree.heading("account_name", text="Account Name", anchor="e")
-        self.tree.heading("debit", text="Debit", anchor="e")
-        self.tree.heading("credit", text="Credit", anchor="e")
-        self.tree.heading("description", text="Description", anchor="e")
+        self.tree.heading("credit", text="دائن", anchor="e")
+        self.tree.heading("debit", text="مدين", anchor="e")
+        self.tree.heading("description", text="البيان", anchor="e")
+        self.tree.heading("account_name", text="اسم الحساب", anchor="e")
+        self.tree.heading("account_code", text="رقم الحساب", anchor="e")
 
-        self.tree.column("account_code", width=130, anchor="e", stretch=False)
-        self.tree.column("account_name", width=260, anchor="e", stretch=True)
-        self.tree.column("debit", width=140, anchor="e", stretch=False)
-        self.tree.column("credit", width=140, anchor="e", stretch=False)
-        self.tree.column("description", width=380, anchor="e", stretch=True)
+        self.tree.column("credit", width=150, anchor="e", stretch=False)
+        self.tree.column("debit", width=150, anchor="e", stretch=False)
+        self.tree.column("description", width=300, anchor="e", stretch=True)
+        self.tree.column("account_name", width=250, anchor="e", stretch=True)
+        self.tree.column("account_code", width=150, anchor="e", stretch=False)
 
         yscroll = ttk.Scrollbar(box, orient="vertical", command=self.tree.yview)
         self.tree.configure(yscrollcommand=yscroll.set)
@@ -336,7 +535,7 @@ class SettlementEntryScreen:
 
     def _build_footer(self):
         foot = ttk.Frame(self.content, style="Settlement.Content.TFrame")
-        foot.grid(row=4, column=0, sticky="ew", pady=(6, 0))
+        foot.grid(row=3, column=0, sticky="ew", pady=(6, 0))
         foot.grid_columnconfigure(0, weight=1)
 
         right = ttk.Frame(foot, style="Settlement.Content.TFrame")
@@ -377,8 +576,25 @@ class SettlementEntryScreen:
         self.combo_line_account.bind("<<ComboboxSelected>>", self._on_line_account_selected)
         self.combo_line_account.bind("<FocusOut>", self._on_line_account_selected)
 
-        for widget in (self.combo_line_account, self.ent_line_debit, self.ent_line_credit, self.ent_line_desc):
-            widget.bind("<Return>", self._on_enter_add_line)
+        self._line_enter_targets = (
+            self.combo_line_account,
+            self.ent_line_name,
+            self.ent_line_debit,
+            self.ent_line_credit,
+            self.combo_customer,
+            self.combo_vendor,
+        )
+        for widget in self._line_enter_targets:
+            widget.bind("<Return>", self._on_line_enter)
+            widget.bind("<KP_Enter>", self._on_line_enter)
+
+        self.txt_line_desc.bind("<Return>", self._on_line_enter)
+        self.txt_line_desc.bind("<KP_Enter>", self._on_line_enter)
+
+        self._bind_lookup_popup(self.combo_line_account, "account", "اختيار الحساب", self._apply_account_lookup)
+        self._bind_lookup_popup(self.ent_line_name, "account_name", "اختيار اسم الحساب", self._apply_account_lookup, values_provider=lambda: self._lookup_values(self.combo_line_account))
+        self._bind_lookup_popup(self.combo_customer, "customer", "اختيار عميل", self._apply_customer_lookup)
+        self._bind_lookup_popup(self.combo_vendor, "vendor", "اختيار مورد", self._apply_vendor_lookup)
 
         self.tree.bind("<<TreeviewSelect>>", self._on_tree_selected)
         self.tree.bind("<Double-1>", self._on_tree_selected)
@@ -387,6 +603,34 @@ class SettlementEntryScreen:
         self.frame.bind_all("<Delete>", self._on_delete_hotkey)
         self.frame.bind_all("<Control-s>", lambda _e: self._save_voucher())
         self.frame.bind_all("<Control-S>", lambda _e: self._save_voucher())
+
+    def _on_line_enter(self, event=None):
+        widget = event.widget if event is not None else None
+        if widget == self.combo_line_account:
+            self.ent_line_name.focus_set()
+        elif widget == self.ent_line_name:
+            self.ent_line_debit.focus_set()
+        elif widget == self.ent_line_debit:
+            self.ent_line_credit.focus_set()
+        elif widget == self.ent_line_credit:
+            if self.customer_chk_var.get() and str(self.combo_customer.cget("state")) != "disabled":
+                self.combo_customer.focus_set()
+            elif self.vendor_chk_var.get() and str(self.combo_vendor.cget("state")) != "disabled":
+                self.combo_vendor.focus_set()
+            else:
+                self.txt_line_desc.focus_set()
+        elif widget == self.combo_customer:
+            if self.vendor_chk_var.get() and str(self.combo_vendor.cget("state")) != "disabled":
+                self.combo_vendor.focus_set()
+            else:
+                self.txt_line_desc.focus_set()
+        elif widget == self.combo_vendor:
+            self.txt_line_desc.focus_set()
+        elif widget == self.txt_line_desc:
+            self._on_enter_add_line()
+        else:
+            self._on_enter_add_line()
+        return "break"
 
     def _on_delete_hotkey(self, _event=None):
         if self.tree.focus_displayof() is not None:
@@ -462,7 +706,7 @@ class SettlementEntryScreen:
             cur = conn.cursor()
 
             # Accounting rule: all accounts are allowed.
-            cur.execute("SELECT TRIM(account_code), COALESCE(account_name, '') FROM finance.accounts ORDER BY account_code")
+            cur.execute("SELECT TRIM(account_code), account_name FROM finance.accounts ORDER BY account_code")
             account_display = []
             self.account_display_to_code.clear()
             self.account_code_to_name.clear()
@@ -481,7 +725,35 @@ class SettlementEntryScreen:
 
             set_combobox_values(self.combo_line_account, account_display)
 
-            cur.execute("SELECT id, COALESCE(vendor_name, '') FROM finance.vendors ORDER BY vendor_name")
+            self.customer_display_to_id.clear()
+            self.customer_id_to_display.clear()
+            customer_values = []
+            customer_table = None
+            for candidate in ("customer", "customers"):
+                if self._table_exists(cur, candidate):
+                    customer_table = candidate
+                    break
+            if customer_table:
+                id_col = "id" if self._column_exists(cur, customer_table, "id") else ("customer_id" if self._column_exists(cur, customer_table, "customer_id") else None)
+                name_col = None
+                for candidate in ("customer_name", "name", "full_name", "customer_no", "code"):
+                    if self._column_exists(cur, customer_table, candidate):
+                        name_col = candidate
+                        break
+                if id_col and name_col:
+                    cur.execute(
+                        f"SELECT {id_col}, {name_col}::text FROM finance.{customer_table} ORDER BY {name_col}"
+                    )
+                    for cid, cname in cur.fetchall() or []:
+                        if cid is None:
+                            continue
+                        disp = f"{int(cid)} - {str(cname).strip()}"
+                        customer_values.append(disp)
+                        self.customer_display_to_id[disp] = int(cid)
+                        self.customer_id_to_display[int(cid)] = disp
+            set_combobox_values(self.combo_customer, customer_values)
+
+            cur.execute("SELECT id, vendor_name FROM finance.vendors ORDER BY vendor_name")
             vendor_values = []
             self.vendor_display_to_id.clear()
             self.vendor_id_to_display.clear()
@@ -492,8 +764,6 @@ class SettlementEntryScreen:
                 vendor_values.append(disp)
                 self.vendor_display_to_id[disp] = int(vid)
                 self.vendor_id_to_display[int(vid)] = disp
-
-            set_combobox_values(self.combo_customer, vendor_values)
             set_combobox_values(self.combo_vendor, vendor_values)
 
             self._load_properties(cur)
@@ -502,6 +772,28 @@ class SettlementEntryScreen:
             messagebox.showerror("DB Error", get_db_error_message(exc, "تعذر تحميل البيانات الأساسية"))
         finally:
             conn.close()
+
+    def _apply_account_lookup(self, value):
+        if not value:
+            return
+        self.line_account_var.set(str(value))
+        self._on_line_account_selected()
+
+    def _apply_customer_lookup(self, value):
+        if not value:
+            return
+        self.customer_var.set(str(value))
+        self.customer_chk_var.set(True)
+        self.vendor_chk_var.set(False)
+        self._on_customer_toggle()
+
+    def _apply_vendor_lookup(self, value):
+        if not value:
+            return
+        self.vendor_var.set(str(value))
+        self.vendor_chk_var.set(True)
+        self.customer_chk_var.set(False)
+        self._on_vendor_toggle()
 
     def _load_properties(self, cur):
         self.property_display_to_id.clear()
@@ -664,12 +956,15 @@ class SettlementEntryScreen:
         if debit <= 0 and credit <= 0:
             raise ValueError("يجب إدخال مدين أو دائن")
 
+        line_desc = self.txt_line_desc.get("1.0", tk.END).strip() if hasattr(self, "txt_line_desc") else self.line_desc_var.get().strip()
+        self.line_desc_var.set(line_desc)
+
         return {
             "account_code": code,
             "account_name": self.account_code_to_name.get(code, ""),
             "debit": debit,
             "credit": credit,
-            "line_description": self.line_desc_var.get().strip(),
+            "line_description": line_desc,
         }
 
     def _on_enter_add_line(self, _event=None):
@@ -715,6 +1010,9 @@ class SettlementEntryScreen:
         self.line_debit_var.set(self._fmt(line.get("debit", 0)) if float(line.get("debit", 0) or 0) > 0 else "")
         self.line_credit_var.set(self._fmt(line.get("credit", 0)) if float(line.get("credit", 0) or 0) > 0 else "")
         self.line_desc_var.set(line.get("line_description", ""))
+        if hasattr(self, "txt_line_desc"):
+            self.txt_line_desc.delete("1.0", tk.END)
+            self.txt_line_desc.insert("1.0", self.line_desc_var.get())
 
     def _delete_selected_line(self):
         sel = self.tree.selection()
@@ -736,11 +1034,11 @@ class SettlementEntryScreen:
                 tk.END,
                 iid=iid,
                 values=(
-                    line.get("account_code", ""),
-                    line.get("account_name", ""),
-                    self._fmt(line.get("debit", 0)),
                     self._fmt(line.get("credit", 0)),
+                    self._fmt(line.get("debit", 0)),
                     line.get("line_description", ""),
+                    line.get("account_name", ""),
+                    line.get("account_code", ""),
                 ),
                 tags=(tag,),
             )
@@ -772,6 +1070,8 @@ class SettlementEntryScreen:
         self.line_debit_var.set("")
         self.line_credit_var.set("")
         self.line_desc_var.set("")
+        if hasattr(self, "txt_line_desc"):
+            self.txt_line_desc.delete("1.0", tk.END)
         self.tree.selection_remove(self.tree.selection())
         self.combo_line_account.focus_set()
 
@@ -805,8 +1105,11 @@ class SettlementEntryScreen:
     def _resolve_vendor_id(self):
         if self.vendor_chk_var.get():
             return self.vendor_display_to_id.get(self.vendor_var.get().strip())
+        return None
+
+    def _resolve_customer_id(self):
         if self.customer_chk_var.get():
-            return self.vendor_display_to_id.get(self.customer_var.get().strip())
+            return self.customer_display_to_id.get(self.customer_var.get().strip())
         return None
 
     def _resolve_property_id(self):
@@ -879,9 +1182,11 @@ class SettlementEntryScreen:
         cur.execute("DELETE FROM finance.ledger WHERE voucher_id=%s", (voucher_id,))
 
         vendor_id = self._resolve_vendor_id()
+        customer_id = self._resolve_customer_id()
         property_id = self._resolve_property_id()
 
         has_vendor = self._column_exists(cur, "ledger", "vendor_id")
+        has_customer = self._column_exists(cur, "ledger", "customer_id")
         has_property = self._column_exists(cur, "ledger", "property_id")
         has_line_desc = self._column_exists(cur, "ledger", "line_description")
         has_desc = self._column_exists(cur, "ledger", "description")
@@ -896,6 +1201,9 @@ class SettlementEntryScreen:
             if has_vendor:
                 cols.append("vendor_id")
                 vals.append(vendor_id)
+            if has_customer:
+                cols.append("customer_id")
+                vals.append(customer_id)
             if has_property:
                 cols.append("property_id")
                 vals.append(property_id)
@@ -1137,6 +1445,7 @@ class SettlementEntryScreen:
             has_line_desc = self._column_exists(cur, "ledger", "line_description")
             has_desc = self._column_exists(cur, "ledger", "description")
             has_vendor = self._column_exists(cur, "ledger", "vendor_id")
+            has_customer = self._column_exists(cur, "ledger", "customer_id")
             has_property = self._column_exists(cur, "ledger", "property_id")
 
             if has_line_desc:
@@ -1147,11 +1456,12 @@ class SettlementEntryScreen:
                 desc_expr = "''"
 
             vendor_expr = "vendor_id" if has_vendor else "NULL"
+            customer_expr = "customer_id" if has_customer else "NULL"
             property_expr = "property_id" if has_property else "NULL"
 
             cur.execute(
                 f"""
-                SELECT account_code, COALESCE(debit, 0), COALESCE(credit, 0), {desc_expr} AS line_desc, {vendor_expr}, {property_expr}
+                SELECT account_code, COALESCE(debit, 0), COALESCE(credit, 0), {desc_expr} AS line_desc, {vendor_expr}, {customer_expr}, {property_expr}
                 FROM finance.ledger
                 WHERE voucher_id=%s
                 ORDER BY id
@@ -1170,8 +1480,9 @@ class SettlementEntryScreen:
 
             self.entry_lines.clear()
             first_vendor = None
+            first_customer = None
             first_property = None
-            for idx, (acc_code, debit, credit, line_desc, vendor_id, property_id) in enumerate(lines, start=1):
+            for idx, (acc_code, debit, credit, line_desc, vendor_id, customer_id, property_id) in enumerate(lines, start=1):
                 code = str(acc_code or "").strip()
                 if not code:
                     continue
@@ -1187,6 +1498,8 @@ class SettlementEntryScreen:
                 )
                 if first_vendor is None and vendor_id is not None:
                     first_vendor = int(vendor_id)
+                if first_customer is None and customer_id is not None:
+                    first_customer = int(customer_id)
                 if first_property is None and property_id is not None:
                     first_property = int(property_id)
 
@@ -1196,6 +1509,12 @@ class SettlementEntryScreen:
                 self.vendor_var.set(self.vendor_id_to_display.get(first_vendor, ""))
                 self.customer_var.set("")
                 self._on_vendor_toggle()
+            elif first_customer is not None:
+                self.customer_chk_var.set(True)
+                self.vendor_chk_var.set(False)
+                self.customer_var.set(self.customer_id_to_display.get(first_customer, ""))
+                self.vendor_var.set("")
+                self._on_customer_toggle()
             else:
                 self.vendor_chk_var.set(False)
                 self.customer_chk_var.set(False)
