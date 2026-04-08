@@ -254,7 +254,12 @@ class RealEstateApp:
                     cursor="hand2",
                 )
                 report_btn._default_style = "App.SidebarSub.TButton"
-                report_btn.configure(command=lambda rn=report_name, b=report_btn: (self._set_active_sidebar_button(b), self.open_report(rn)))
+                report_btn.configure(
+                    command=lambda rn=report_name, b=report_btn: (
+                        self._set_active_sidebar_button(b),
+                        self.open_report_from_sidebar(rn),
+                    )
+                )
                 report_btn.pack(fill="x")
 
             self._report_section_widgets[section_name] = {
@@ -425,6 +430,21 @@ class RealEstateApp:
         self.clear_display_area()
         self.current_page = ReportsScreen(self.display_area)
 
+    def open_report_from_sidebar(self, report_name):
+        self.open_reports()
+        try:
+            handler = getattr(self.current_page, "open_report", None)
+            if callable(handler):
+                handler(report_name)
+            else:
+                raise AttributeError("واجهة التقارير لا تدعم open_report")
+        except Exception as exc:
+            messagebox.showerror("خطأ", f"تعذر فتح التقرير: {exc}")
+
+    def open_report(self, report_name):
+        # Keep backward compatibility for any existing callers.
+        self.open_report_from_sidebar(report_name)
+
     def open_settings(self):
         self.clear_display_area()
         try:
@@ -435,10 +455,6 @@ class RealEstateApp:
             return
         self.current_page = settings_cls(self.display_area, current_user=self.current_user)
 
-    def open_report(self, report_name):
-        self.clear_display_area()
-        self.current_page = ReportsScreen(self.display_area)
-        self.current_page.open_report(report_name)
 
     def open_customers(self):
         self.clear_display_area()

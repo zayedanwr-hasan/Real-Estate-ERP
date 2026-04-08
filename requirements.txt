@@ -3,3 +3,7 @@ psycopg2-binary
 pandas
 openpyxl
 reportlab
+jinja2
+pdfkit
+PyMuPDF
+Pillow
