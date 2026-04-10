@@ -1,148 +1,171 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
   <meta charset="UTF-8" />
-  <title>{{ report_title }}</title>
+  <title>{{ report_title | default('', true) }}</title>
   <style>
-    @page { size: A4; margin: 10mm 8mm; }
+    @page { size: A4; margin: 12mm 10mm; }
+    * { box-sizing: border-box; }
     body {
-      margin: 0;
-      padding: 0;
-      direction: rtl;
-      font-family: Tahoma, Arial, sans-serif;
-      font-size: 12px;
-      color: #1f2d3d;
-      background: #fff;
+      margin: 0; padding: 0; direction: rtl;
+      font-family: "Times New Roman", Arial, sans-serif;
+      font-size: 14px; color: #000;
+      -webkit-print-color-adjust: exact; print-color-adjust: exact;
     }
-    .paper { border: 1px solid #2c3e50; padding: 8px; }
-    .box { border: 1px solid #2c3e50; margin-bottom: 8px; background: #fff; }
-    table { width: 100%; border-collapse: collapse; table-layout: fixed; }
-    .header td { padding: 8px; vertical-align: top; }
-    .header .right, .header .left { width: 30%; line-height: 1.7; font-weight: 700; }
-    .header .center { width: 40%; text-align: center; }
-    .title { margin: 0; color: #8b0000; font-size: 22px; font-weight: 700; }
-    .logo { width: 72px; height: 72px; object-fit: contain; margin-bottom: 6px; border: 1px solid #d9d9d9; }
-    .strip td {
-      border-left: 1px solid #d8d8d8;
-      padding: 6px 8px;
-      text-align: right;
-      font-weight: 700;
+    .paper { width: 190mm; max-width: 100%; margin: 0 auto; }
+    .statement-border {
+      border: 2px solid #000; padding: 15px; min-height: 275mm;
+      display: flex; flex-direction: column;
+    }
+    .header-box { border: 1px solid #000; margin-bottom: 15px; }
+    .header-row {
+      display: flex; justify-content: space-between; align-items: flex-start;
+      gap: 10px; padding: 12px;
+    }
+    .header-right, .header-center, .header-left { flex: 1; }
+    .header-right { text-align: right; line-height: 1.6; }
+    .header-center { text-align: center; }
+    .header-left { text-align: left; font-size: 12px; }
+    .company-name {
+      display: block; font-size: 18px; font-weight: bold;
+      color: #0d3b8e; margin-bottom: 5px;
+    }
+    .title-container { display: inline-block; border: 2px solid #000; padding: 8px 25px; background: #fff; }
+    .title-text { margin: 0; font-size: 22px; font-weight: bold; }
+    .label-blue { color: #0d3b8e; font-weight: bold; }
+    .value-black { color: #000; font-weight: bold; }
+    .meta-box {
+      width: 100%; border: 1px solid #000; background: #f9f9f9;
+      padding: 10px 12px; margin-bottom: 15px;
+      display: grid;
+      grid-auto-flow: column;
+      grid-auto-columns: max-content;
+      justify-content: space-between;
+      align-items: center;
+      gap: 26px;
+      white-space: nowrap;
+      overflow-x: auto;
+    }
+    .meta-item {
+      display: inline-flex; align-items: center; gap: 6px;
+      white-space: nowrap; text-align: right;
+    }
+    .table-wrap { flex-grow: 1; margin-bottom: 24px; }
+    .grid-table { width: 100%; border-collapse: collapse; background: #fff; }
+    .grid-table thead th {
+      border: 1px solid #000; color: #c00000; padding: 12px 5px;
+      font-size: 15px; font-weight: bold; text-align: center; background: #fff;
+    }
+    .grid-table tbody td {
+      border: 1px solid #000; padding: 10px 8px;
+      text-align: center; line-height: 1.5; background: #fff;
+    }
+    .col-desc { text-align: right !important; padding-right: 12px !important; }
+    .summary-bar { border: 2px solid #000; padding: 12px 16px; margin-bottom: 16px; }
+    .summary-row {
+      display: grid;
+      grid-auto-flow: column;
+      grid-auto-columns: max-content;
+      justify-content: space-between;
+      align-items: center;
+      gap: 34px;
+      white-space: nowrap;
+      overflow-x: auto;
+    }
+    .summary-row > div {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
       white-space: nowrap;
     }
-    .strip td:last-child { border-left: 0; }
-    .grid { border: 1px solid #2c3e50; margin-bottom: 8px; }
-    .grid th {
-      border: 1px solid #2c3e50;
-      background: #f2f2f2;
-      padding: 7px 6px;
-      text-align: right;
-      font-weight: 700;
+    .signatures-section {
+      width: 100%; display: flex; justify-content: space-between; align-items: flex-end;
+      gap: 24px; margin-top: 20px; padding: 0 6px; border: 0;
     }
-    .grid td {
-      border: 1px solid #cfcfcf;
-      padding: 7px 6px;
-      text-align: right;
-      line-height: 1.5;
+    .sig-item { flex: 1; text-align: center; border: 0; }
+    .sig-line { width: 70%; margin: 10px auto 0; border-top: 1px dashed #000; }
+    .footer-note {
+      text-align: center; font-size: 12px; font-weight: bold;
+      margin-top: 35px; border: 0; padding-top: 0;
     }
-    .grid tbody tr:nth-child(odd) { background: #fff; }
-    .grid tbody tr:nth-child(even) { background: #fbfbfb; }
-    .grid .opening, .grid .total { background: #eef7f5 !important; font-weight: 700; }
-    .col-date { width: 14%; }
-    .col-doc { width: 14%; }
-    .col-desc { width: 34%; }
-    .col-debit { width: 12%; }
-    .col-credit { width: 12%; }
-    .col-balance { width: 14%; }
-    .signatures { border-spacing: 8px 0; border-collapse: separate; }
-    .signatures td {
-      border: 1px solid #2c3e50;
-      text-align: center;
-      font-weight: 700;
-      width: 33.33%;
-      padding: 10px 0;
-    }
-    .legal { text-align: center; font-size: 11px; margin-top: 6px; }
   </style>
 </head>
 <body>
   <div class="paper">
-    <div class="box">
-      <table class="header">
-        <tr>
-          <td class="right">
-            {% if company_logo_uri %}
-              <img class="logo" src="{{ company_logo_uri }}" alt="logo" />
-            {% endif %}
-            {{ company_name }}<br />
-            {{ company_phone }}{% if company_email %} / {{ company_email }}{% endif %}<br />
-            {{ company_address }}
-          </td>
-          <td class="center"><h1 class="title">{{ report_title }}</h1></td>
-          <td class="left">
-            التاريخ: {{ print_date }}<br />
-            الوقت: {{ print_time }}<br />
-            المستخدم: {{ user_name }}
-          </td>
-        </tr>
-      </table>
-    </div>
-
-    <div class="box">
-      <table class="strip">
-        <tr>
-          <td>الفترة: من {{ date_from }} إلى {{ date_to }}</td>
-          <td>الحساب: {{ account_label }}</td>
-          <td>حالة الترحيل: {{ posted_status }}</td>
-        </tr>
-      </table>
-    </div>
-
-    <table class="grid">
-      <thead>
-        <tr>
-          <th class="col-date">التاريخ</th>
-          <th class="col-doc">رقم السند</th>
-          <th class="col-desc">البيان</th>
-          <th class="col-debit">مدين</th>
-          <th class="col-credit">دائن</th>
-          <th class="col-balance">الرصيد</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for row in rows %}
-          <tr class="{% if row.row_type == 'opening' %}opening{% elif row.row_type == 'total' %}total{% endif %}">
-            <td>{{ row.date }}</td>
-            <td>{{ row.doc_no }}</td>
-            <td>{{ row.description }}</td>
-            <td>{{ row.debit_text }}</td>
-            <td>{{ row.credit_text }}</td>
-            <td>{{ row.balance_text }}</td>
-          </tr>
+    <div class="statement-border">
+      <div class="header-box">
+        <div class="header-row">
+          <div class="header-right">
+            <span class="company-name">{{ company_name if company_name is defined and company_name else 'مكتب النبراس للعقارات' }}</span>
+            <span class="label-blue">تلفون:</span> <span>{{ company_phone | default('', true) }}</span><br>
+            <span class="label-blue">العنوان:</span> <span>{{ company_address | default('', true) }}</span>
+          </div>
+          <div class="header-center">
+            <div class="title-container">
+              <h1 class="title-text">{{ report_title | default('', true) }}</h1>
+            </div>
+          </div>
+          <div class="header-left">
+            <span class="label-blue">التاريخ:</span> {{ print_date | default('', true) }}<br>
+            <span class="label-blue">الوقت:</span> {{ print_time | default('', true) }}<br>
+            <span class="label-blue">المستخدم:</span> {{ user_name | default('', true) }}
+          </div>
+        </div>
+      </div>
+      {% if meta_items %}
+      <div class="meta-box">
+        {% for item in meta_items %}
+        <div class="meta-item">
+          <span class="label-blue">{{ item.get('label', '') if item is mapping else '' }}:</span>
+          <span class="value-black">{{ item.get('value', '') if item is mapping else '' }}</span>
+        </div>
         {% endfor %}
-      </tbody>
-    </table>
-
-    <div class="box">
-      <table class="strip">
-        <tr>
-          <td>الرصيد الختامي: {{ closing_balance_text }}</td>
-          <td>إجمالي الدائن: {{ total_credit_text }}</td>
-          <td>إجمالي المدين: {{ total_debit_text }}</td>
-        </tr>
-      </table>
-    </div>
-
-    <div class="box" style="padding:8px;">
-      <table class="signatures">
-        <tr>
-          <td>المحاسب</td>
-          <td>المدير</td>
-          <td>أمين الصندوق</td>
-        </tr>
-      </table>
-      <div class="legal">باستثناء الخطأ والسهو يعتبر هذا الكشف صحيحاً ما لم يرد اعتراض خطي</div>
+      </div>
+      {% endif %}
+      <div class="table-wrap">
+        <table class="grid-table">
+          <thead>
+            <tr>
+              {% for header in table_columns %}
+              <th>{{ header.get('label', '') if header is mapping else '' }}</th>
+              {% endfor %}
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in rows %}
+            <tr class="{{ row.get('row_type', '') if row is mapping else '' }}">
+              {% for header in table_columns %}
+              {% set cell_key = header.get('key', '') if header is mapping else '' %}
+              <td class="{{ 'col-desc' if cell_key == 'description' else '' }}">
+                {{ row.get(cell_key, '') if row is mapping and cell_key else '' }}
+              </td>
+              {% endfor %}
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% if summary_items %}
+      <div class="summary-bar">
+        <div class="summary-row">
+          {% for item in summary_items %}
+          <div>
+            <span class="label-blue">{{ item.get('label', '') if item is mapping else '' }}:</span>
+            <span class="value-black" style="font-size: 16px;">{{ item.get('value', '') if item is mapping else '' }}</span>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+      {% endif %}
+      <div class="signatures-section">
+        <div class="sig-item"><span>أمـين الـصـنـدوق</span><div class="sig-line"></div></div>
+        <div class="sig-item"><span>الـمـحـاسـب</span><div class="sig-line"></div></div>
+        <div class="sig-item"><span>الـمـدير المـالـي</span><div class="sig-line"></div></div>
+      </div>
+      <div class="footer-note">
+        باستثناء الخطأ والسهو يعتبر هذا الكشف صحيحاً ما لم يرد اعتراض خطي خلال 24 ساعة
+      </div>
     </div>
   </div>
 </body>
 </html>
-

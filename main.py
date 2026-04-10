@@ -1,4 +1,3 @@
-import importlib
 import ttkbootstrap as tb
 from tkinter import ttk, messagebox
 
@@ -11,7 +10,9 @@ from reports_screen import ReportsScreen
 from app_constants import SYSTEM_NAME
 from customers_screen import CustomersScreen
 from vendors_screen import VendorsScreen
+from vendor_groups_screen import VendorGroupsScreen
 from fund_coding_screen import FundCodingScreen
+from settings_screen import SystemSettingsScreen
 
 
 class RealEstateApp:
@@ -324,6 +325,7 @@ class RealEstateApp:
         coding_items = [
             ("ترميز العملاء", self.open_customers),
             ("ترميز الموردين", self.open_vendors),
+            ("ترميز مجموعات الموردين", self.open_vendor_groups),
             ("ترميز الصناديق", self.open_funds_coding),
         ]
 
@@ -403,6 +405,7 @@ class RealEstateApp:
             style="App.WelcomeSub.TLabel"
         ).pack()
 
+
     # =========================
     # Navigation
     # =========================
@@ -447,13 +450,7 @@ class RealEstateApp:
 
     def open_settings(self):
         self.clear_display_area()
-        try:
-            settings_module = importlib.import_module("settings_screen")
-            settings_cls = getattr(settings_module, "SettingsScreen")
-        except Exception:
-            messagebox.showinfo("تنبيه", "شاشة الإعدادات غير متوفرة حالياً")
-            return
-        self.current_page = settings_cls(self.display_area, current_user=self.current_user)
+        self.current_page = SystemSettingsScreen(self.display_area, current_user=self.current_user)
 
 
     def open_customers(self):
@@ -464,12 +461,14 @@ class RealEstateApp:
         self.clear_display_area()
         self.current_page = VendorsScreen(self.display_area)
 
+    def open_vendor_groups(self):
+        self.clear_display_area()
+        self.current_page = VendorGroupsScreen(self.display_area)
+
     def open_funds_coding(self):
         self.clear_display_area()
         self.current_page = FundCodingScreen(self.display_area)
 
-    def dummy_msg(self):
-        messagebox.showinfo("الإعدادات", "خاص بالمدير")
 
 
 if __name__ == "__main__":

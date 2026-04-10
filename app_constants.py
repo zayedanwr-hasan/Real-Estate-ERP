@@ -20,5 +20,6 @@ CUSTOMER_CONTROL_ACCOUNT_CODE = "1104"
 VENDOR_CONTROL_ACCOUNT_CODE = "2101"
 
 # HTML -> PDF preview subsystem
-WKHTMLTOPDF_PATH = ""
+# Default local installation path on Windows; can still be overridden via env var or ReportManager argument.
+WKHTMLTOPDF_PATH = r"C:\Program Files\wkhtmltopdf\bin\wkhtmltopdf.exe"
 REPORT_PREVIEW_TEMP_DIR = ""
