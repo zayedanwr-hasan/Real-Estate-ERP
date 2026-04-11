@@ -3,6 +3,7 @@ from tkinter import messagebox, ttk
 
 import ttkbootstrap as tb
 
+from app_constants import ACCOUNT_LEVEL_ANALYTICAL, VENDOR_CONTROL_ACCOUNT_CODE
 from combobox_helper import bind_searchable_combobox, set_combobox_values
 from db_connection import get_connection, get_db_error_message
 
@@ -30,7 +31,6 @@ class VendorGroupsScreen:
         self.group_account_col = None
         self.vendor_name_col = None
         self.vendor_phone_col = None
-        self.vendor_nid_col = None
         self.vendor_group_id_col = None
         self.vendor_group_name_col = None
         self.vendor_property_id_col = None
@@ -89,7 +89,7 @@ class VendorGroupsScreen:
         self.master_form.grid_columnconfigure(2, weight=1)
 
         land_wrap = tb.Frame(self.master_form, style="VG.Card.TFrame")
-        land_wrap.grid(row=0, column=0, sticky="ew", padx=10, pady=12)
+        land_wrap.grid(row=0, column=0, sticky="ew", padx=10, pady=10)
         land_wrap.grid_columnconfigure(0, weight=1)
 
         ttk.Label(land_wrap, text="الأرض", style="VG.FieldLabel.TLabel", width=14).grid(row=0, column=2, sticky="e", padx=(0, 8))
@@ -113,7 +113,7 @@ class VendorGroupsScreen:
         tb.Button(actions_wrap, text="حفظ", bootstyle="success", command=self.action_save).grid(row=0, column=1, padx=4)
         tb.Button(actions_wrap, text="تعديل", bootstyle="warning", command=self.action_edit).grid(row=0, column=2, padx=4)
         tb.Button(actions_wrap, text="حذف", bootstyle="danger", command=self.action_delete).grid(row=0, column=3, padx=4)
-        tb.Button(actions_wrap, text="بحث/تحديث", bootstyle="info", command=self.refresh_groups).grid(row=0, column=4, padx=4)
+        tb.Button(actions_wrap, text="تحديث", bootstyle="info", command=self.refresh_groups).grid(row=0, column=4, padx=4)
 
         detail_card = tb.Frame(self.card, style="VG.Card.TFrame", padding=(12, 10, 12, 10))
         detail_card.grid(row=3, column=0, sticky="ew", pady=(0, 10))
@@ -125,24 +125,20 @@ class VendorGroupsScreen:
         quick.grid(row=1, column=0, sticky="ew")
         quick.grid_columnconfigure(0, weight=1)
         quick.grid_columnconfigure(2, weight=1)
-        quick.grid_columnconfigure(4, weight=1)
 
         self.ent_heir_name = self._create_labeled_field(quick, 0, 0, "اسم المورد/الوارث", field_type="entry")
         self.ent_heir_phone = self._create_labeled_field(quick, 0, 2, "رقم الهاتف", field_type="entry")
-        self.ent_heir_nid = self._create_labeled_field(quick, 0, 4, "الهوية/الرقم الوطني", field_type="entry")
 
         tb.Button(detail_card, text="إضافة للقائمة", bootstyle="secondary", command=self.add_pending_heir).grid(row=2, column=0, sticky="e", pady=(8, 6))
 
-        heir_cols = ("idx", "name", "phone", "nid")
+        heir_cols = ("idx", "name", "phone")
         self.heirs_tree = ttk.Treeview(detail_card, columns=heir_cols, show="headings", style="VG.Treeview", height=5)
         self.heirs_tree.heading("idx", text="#", anchor="e")
         self.heirs_tree.heading("name", text="الاسم", anchor="e")
         self.heirs_tree.heading("phone", text="الهاتف", anchor="e")
-        self.heirs_tree.heading("nid", text="الهوية", anchor="e")
         self.heirs_tree.column("idx", width=50, anchor="e")
-        self.heirs_tree.column("name", width=280, anchor="e")
-        self.heirs_tree.column("phone", width=200, anchor="e")
-        self.heirs_tree.column("nid", width=220, anchor="e")
+        self.heirs_tree.column("name", width=360, anchor="e")
+        self.heirs_tree.column("phone", width=250, anchor="e")
         self.heirs_tree.grid(row=3, column=0, sticky="ew")
 
         groups_wrap = tb.Frame(self.card, style="VG.Card.TFrame")
@@ -165,14 +161,14 @@ class VendorGroupsScreen:
 
     def _create_labeled_field(self, parent, row, col, label_text, field_type="entry", values=(), state="normal"):
         wrap = tb.Frame(parent, style="VG.Card.TFrame")
-        wrap.grid(row=row, column=col, sticky="ew", padx=10, pady=12)
+        wrap.grid(row=row, column=col, sticky="ew", padx=10, pady=10)
         wrap.grid_columnconfigure(0, weight=1)
 
         ttk.Label(wrap, text=label_text, style="VG.FieldLabel.TLabel", width=14).grid(row=0, column=1, sticky="e", padx=(0, 8))
 
         if field_type == "combo":
             widget = ttk.Combobox(wrap, values=values, state=state, justify="right", style="VG.Field.TCombobox", font=("Segoe UI", 11))
-            if values:
+            if len(values) > 0:
                 widget.set(values[0])
         else:
             widget = ttk.Entry(wrap, style="VG.Field.TEntry", justify="right", font=("Segoe UI", 11))
@@ -217,13 +213,12 @@ class VendorGroupsScreen:
 
         self.vendor_name_col = self._pick_col(self.vendor_cols, ("vendor_name", "full_name", "name"))
         self.vendor_phone_col = self._pick_col(self.vendor_cols, ("phone", "mobile", "phone_number", "vendor_phone"))
-        self.vendor_nid_col = self._pick_col(self.vendor_cols, ("national_id", "id_number"))
         self.vendor_group_id_col = self._pick_col(self.vendor_cols, ("group_id", "vendor_group_id"))
         self.vendor_group_name_col = self._pick_col(self.vendor_cols, ("group_name", "vendor_group_name"))
         self.vendor_property_id_col = self._pick_col(self.vendor_cols, ("property_id",))
 
     def _bind_enter_navigation(self):
-        order = [self.cmb_land, self.ent_group_name, self.cmb_control_account, self.ent_heir_name, self.ent_heir_phone, self.ent_heir_nid]
+        order = [self.cmb_land, self.ent_group_name, self.cmb_control_account, self.ent_heir_name, self.ent_heir_phone]
         for idx, widget in enumerate(order):
             def next_widget(_event, i=idx):
                 if i == len(order) - 1:
@@ -242,7 +237,6 @@ class VendorGroupsScreen:
         self.cmb_control_account.configure(state=combo_state)
         self.ent_heir_name.configure(state=entry_state)
         self.ent_heir_phone.configure(state=entry_state)
-        self.ent_heir_nid.configure(state=entry_state)
 
     def refresh_properties(self, show_warning=False):
         self.property_display_to_id.clear()
@@ -286,22 +280,27 @@ class VendorGroupsScreen:
         try:
             with conn:
                 with conn.cursor() as cur:
-                    cur.execute("""
+                    cur.execute(
+                        """
                         SELECT account_code, account_name
                         FROM finance.accounts
-                        WHERE is_active = true
-                          AND account_level = 'تحليلي'
-                          AND (parent_code = '21' OR account_code LIKE '21%')
+                        WHERE TRIM(account_code) = %s
                         ORDER BY account_code
-                    """)
+                        """,
+                        (VENDOR_CONTROL_ACCOUNT_CODE,),
+                    )
                     rows = cur.fetchall() or []
                     if not rows:
-                        cur.execute("""
+                        cur.execute(
+                            """
                             SELECT account_code, account_name
                             FROM finance.accounts
-                            WHERE is_active = true AND account_level = 'تحليلي'
+                            WHERE is_active = true
+                              AND account_level = 'تحليلي'
+                              AND (parent_code = '21' OR account_code LIKE '21%')
                             ORDER BY account_code
-                        """)
+                            """
+                        )
                         rows = cur.fetchall() or []
 
             displays = []
@@ -316,7 +315,14 @@ class VendorGroupsScreen:
                 displays.append(display)
 
             set_combobox_values(self.cmb_control_account, displays)
-            if displays and not self.cmb_control_account.get().strip():
+            default_display = None
+            for display, code in self.control_account_display_to_code.items():
+                if code == VENDOR_CONTROL_ACCOUNT_CODE:
+                    default_display = display
+                    break
+            if default_display:
+                self.cmb_control_account.set(default_display)
+            elif displays and not self.cmb_control_account.get().strip():
                 self.cmb_control_account.set(displays[0])
         except Exception as exc:
             messagebox.showerror("خطأ", get_db_error_message(exc, "تعذر تحميل حسابات التحكم"))
@@ -332,7 +338,7 @@ class VendorGroupsScreen:
 
         popup = tk.Toplevel(self.master.winfo_toplevel())
         popup.title("ترميز الأراضي")
-        popup.geometry("1280x820")
+        popup.geometry("1460x900")
         popup.transient(self.master.winfo_toplevel())
         popup.grab_set()
 
@@ -349,26 +355,61 @@ class VendorGroupsScreen:
     def _clear_heir_inputs(self):
         self.ent_heir_name.delete(0, tk.END)
         self.ent_heir_phone.delete(0, tk.END)
-        self.ent_heir_nid.delete(0, tk.END)
 
     def _refresh_pending_heirs_tree(self):
         for item in self.heirs_tree.get_children():
             self.heirs_tree.delete(item)
         for idx, heir in enumerate(self.pending_heirs, start=1):
-            self.heirs_tree.insert("", tk.END, values=(idx, heir["name"], heir["phone"], heir["nid"]))
+            self.heirs_tree.insert("", tk.END, values=(idx, heir["name"], heir["phone"]))
 
     def add_pending_heir(self):
         name = self.ent_heir_name.get().strip()
         phone = self.ent_heir_phone.get().strip()
-        nid = self.ent_heir_nid.get().strip()
         if not name:
             messagebox.showwarning("تنبيه", "اسم المورد/الوارث مطلوب")
             self.ent_heir_name.focus_set()
             return
-        self.pending_heirs.append({"name": name, "phone": phone, "nid": nid})
+        self.pending_heirs.append({"name": name, "phone": phone})
         self._clear_heir_inputs()
         self._refresh_pending_heirs_tree()
         self.ent_heir_name.focus_set()
+
+    def _next_group_account_code(self, cur, parent_code):
+        cur.execute(
+            """
+            SELECT COALESCE(MAX(CAST(SUBSTRING(TRIM(account_code) FROM %s) AS BIGINT)), 0)
+            FROM finance.accounts
+            WHERE TRIM(account_code) LIKE %s
+              AND LENGTH(TRIM(account_code)) >= %s
+              AND SUBSTRING(TRIM(account_code) FROM %s) ~ '^[0-9]+$'
+            """,
+            (len(parent_code) + 1, f"{parent_code}%", len(parent_code) + 1, len(parent_code) + 1),
+        )
+        max_suffix = int((cur.fetchone() or [0])[0] or 0)
+        return f"{parent_code}{max_suffix + 1:03d}"
+
+    def _account_code_exists(self, cur, account_code):
+        cur.execute("SELECT 1 FROM finance.accounts WHERE TRIM(account_code)=TRIM(%s) LIMIT 1", (account_code,))
+        return cur.fetchone() is not None
+
+    def _upsert_group_account(self, cur, account_code, group_name, parent_code):
+        cur.execute("SELECT 1 FROM finance.accounts WHERE TRIM(account_code)=TRIM(%s) LIMIT 1", (account_code,))
+        if cur.fetchone():
+            set_parts = ["account_name = %s", "parent_code = %s", "account_level = %s"]
+            params = [group_name, parent_code, ACCOUNT_LEVEL_ANALYTICAL, account_code]
+            # noinspection SqlResolve,SqlNoDataSourceInspection,SqlDialectInspection
+            cur.execute(
+                f"UPDATE finance.accounts SET {', '.join(set_parts)} WHERE TRIM(account_code)=TRIM(%s)",
+                tuple(params),
+            )
+            return
+
+        # noinspection SqlResolve,SqlNoDataSourceInspection,SqlDialectInspection
+        cur.execute(
+            "INSERT INTO finance.accounts (account_code, account_name, parent_code, account_level, is_active) "
+            "VALUES (%s, %s, %s, %s, true)",
+            (account_code, group_name, parent_code, ACCOUNT_LEVEL_ANALYTICAL),
+        )
 
     def action_new(self):
         self.selected_group_id = None
@@ -403,7 +444,7 @@ class VendorGroupsScreen:
             return None
 
         account_code = self.control_account_display_to_code.get(self.cmb_control_account.get().strip(), "")
-        return {"group_name": group_name, "property_id": property_id, "account_code": account_code}
+        return {"group_name": group_name, "property_id": property_id, "parent_code": account_code or VENDOR_CONTROL_ACCOUNT_CODE}
 
     def _insert_heirs(self, cur, group_id, group_name, property_id):
         for heir in self.pending_heirs:
@@ -419,11 +460,8 @@ class VendorGroupsScreen:
                 cols.append(self.vendor_phone_col)
                 vals.append("%s")
                 params.append(heir["phone"])
-            if self.vendor_nid_col:
-                cols.append(self.vendor_nid_col)
-                vals.append("%s")
-                params.append(heir["nid"])
 
+            # noinspection SqlResolve,SqlNoDataSourceInspection,SqlDialectInspection
             cur.execute(
                 f"INSERT INTO finance.vendors ({', '.join(cols)}) VALUES ({', '.join(vals)})",
                 tuple(params),
@@ -444,14 +482,21 @@ class VendorGroupsScreen:
         try:
             with conn:
                 with conn.cursor() as cur:
+                    group_account_code = self._next_group_account_code(cur, data["parent_code"])
+                    while self._account_code_exists(cur, group_account_code):
+                        group_account_code = self._next_group_account_code(cur, data["parent_code"])
+
+                    self._upsert_group_account(cur, group_account_code, data["group_name"], data["parent_code"])
+
                     cols = [self.group_name_col, self.group_property_col]
                     vals = ["%s", "%s"]
                     params = [data["group_name"], data["property_id"]]
                     if self.group_account_col:
                         cols.append(self.group_account_col)
                         vals.append("%s")
-                        params.append(data["account_code"])
+                        params.append(group_account_code)
 
+                    # noinspection SqlResolve,SqlNoDataSourceInspection,SqlDialectInspection
                     cur.execute(
                         f"INSERT INTO finance.vendor_groups ({', '.join(cols)}) VALUES ({', '.join(vals)}) RETURNING id",
                         tuple(params),
@@ -481,11 +526,23 @@ class VendorGroupsScreen:
         try:
             with conn:
                 with conn.cursor() as cur:
+                    current_group_account = ""
+                    if self.group_account_col:
+                        cur.execute(f"SELECT COALESCE({self.group_account_col}, '') FROM finance.vendor_groups WHERE id = %s", (self.selected_group_id,))
+                        current_group_account = str((cur.fetchone() or [""])[0] or "").strip()
+
+                    if not current_group_account:
+                        current_group_account = self._next_group_account_code(cur, data["parent_code"])
+                        while self._account_code_exists(cur, current_group_account):
+                            current_group_account = self._next_group_account_code(cur, data["parent_code"])
+
+                    self._upsert_group_account(cur, current_group_account, data["group_name"], data["parent_code"])
+
                     set_parts = [f"{self.group_name_col} = %s", f"{self.group_property_col} = %s"]
                     params = [data["group_name"], data["property_id"]]
                     if self.group_account_col:
                         set_parts.append(f"{self.group_account_col} = %s")
-                        params.append(data["account_code"])
+                        params.append(current_group_account)
                     params.append(self.selected_group_id)
 
                     cur.execute(
@@ -517,9 +574,21 @@ class VendorGroupsScreen:
         try:
             with conn:
                 with conn.cursor() as cur:
+                    group_account = ""
+                    cur.execute("SELECT COALESCE(account_code, '') FROM finance.vendor_groups WHERE id = %s", (self.selected_group_id,))
+                    group_account = str((cur.fetchone() or [""])[0] or "").strip()
+
+                    if group_account:
+                        cur.execute("SELECT 1 FROM finance.ledger WHERE TRIM(account_code)=TRIM(%s) LIMIT 1", (group_account,))
+                        if cur.fetchone():
+                            messagebox.showwarning("تنبيه", "لا يمكن حذف المجموعة لوجود حركات محاسبية")
+                            return
+
                     if self.vendor_group_id_col:
                         cur.execute(f"DELETE FROM finance.vendors WHERE {self.vendor_group_id_col} = %s", (self.selected_group_id,))
                     cur.execute("DELETE FROM finance.vendor_groups WHERE id = %s", (self.selected_group_id,))
+                    if group_account:
+                        cur.execute("DELETE FROM finance.accounts WHERE TRIM(account_code)=TRIM(%s)", (group_account,))
 
             messagebox.showinfo("نجاح", "تم حذف المجموعة")
             self.refresh_groups()
@@ -591,10 +660,9 @@ class VendorGroupsScreen:
             with conn:
                 with conn.cursor() as cur:
                     phone_col = self.vendor_phone_col or "NULL"
-                    nid_col = self.vendor_nid_col or "NULL"
                     cur.execute(
                         f"""
-                        SELECT {self.vendor_name_col}, {phone_col}, {nid_col}
+                        SELECT {self.vendor_name_col}, {phone_col}
                         FROM finance.vendors
                         WHERE {self.vendor_group_id_col} = %s
                         ORDER BY id
@@ -603,11 +671,12 @@ class VendorGroupsScreen:
                     )
                     rows = cur.fetchall() or []
 
-            for name, phone, nid in rows:
-                self.pending_heirs.append({"name": (name or ""), "phone": (phone or ""), "nid": (nid or "")})
+            for name, phone in rows:
+                self.pending_heirs.append({"name": (name or ""), "phone": (phone or "")})
         except Exception as exc:
             messagebox.showerror("خطأ", get_db_error_message(exc, "تعذر تحميل أفراد المجموعة"))
         finally:
             conn.close()
 
         self._refresh_pending_heirs_tree()
+

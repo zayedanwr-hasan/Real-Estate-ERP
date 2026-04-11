@@ -25,7 +25,6 @@ class VendorsScreen:
 
         self.vendor_columns = set()
         self.phone_col = None
-        self.nid_col = None
         self.control_col = None
         self.group_id_col = None
         self.group_name_col = None
@@ -87,9 +86,8 @@ class VendorsScreen:
         self.ent_name = self._create_field_row(form_wrap, 1, "الاسم الكلي")
         self.combo_group = self._create_field_row(form_wrap, 2, "مجموعة المورد", field_type="combo", values=("بدون مجموعة",), state="readonly")
         self.ent_phone = self._create_field_row(form_wrap, 3, "رقم الهاتف")
-        self.ent_national_id = self._create_field_row(form_wrap, 4, "الهوية")
-        self.ent_control = self._create_field_row(form_wrap, 5, "حساب التحكم", readonly=True)
-        self.combo_status = self._create_field_row(form_wrap, 6, "الحالة", field_type="combo", values=(self.STATUS_ACTIVE, self.STATUS_INACTIVE), state="readonly")
+        self.ent_control = self._create_field_row(form_wrap, 4, "حساب التحكم", readonly=True)
+        self.combo_status = self._create_field_row(form_wrap, 5, "الحالة", field_type="combo", values=(self.STATUS_ACTIVE, self.STATUS_INACTIVE), state="readonly")
 
         buttons_wrap = tb.Frame(self.card, style="Vend.Card.TFrame", padding=(16, 6, 16, 14))
         buttons_wrap.grid(row=2, column=0, sticky="ew")
@@ -111,14 +109,13 @@ class VendorsScreen:
         actions_bar.grid_columnconfigure(0, weight=1)
         tb.Button(actions_bar, text="تحديث", style="Vend.Refresh.TButton", command=self._load_rows).grid(row=0, column=0, sticky="e")
 
-        cols = ("id", "name", "group", "phone", "national_id", "status")
+        cols = ("id", "name", "group", "phone", "status")
         self.tree = ttk.Treeview(table_wrap, columns=cols, show="headings", style="Vend.Treeview")
         for col, title, width in (
             ("id", "ID", 70),
             ("name", "اسم المورد", 230),
             ("group", "المجموعة", 220),
             ("phone", "رقم الهاتف", 150),
-            ("national_id", "الهوية", 140),
             ("status", "الحالة", 90),
         ):
             self.tree.heading(col, text=title, anchor="e")
@@ -197,7 +194,6 @@ class VendorsScreen:
                     cols = self._table_columns(cur, "vendors")
                     self.vendor_columns = cols
                     self.phone_col = self._pick_column(cols, ("phone", "mobile", "phone_number", "vendor_phone"))
-                    self.nid_col = self._pick_column(cols, ("national_id", "id_number"))
                     self.control_col = "control_account" if "control_account" in cols else None
                     self.group_id_col = self._pick_column(cols, ("group_id", "vendor_group_id"))
                     self.group_name_col = self._pick_column(cols, ("group_name", "vendor_group_name"))
@@ -205,7 +201,6 @@ class VendorsScreen:
         except Exception:
             self.vendor_columns = set()
             self.phone_col = None
-            self.nid_col = None
             self.control_col = None
             self.group_id_col = None
             self.group_name_col = None
@@ -305,7 +300,6 @@ class VendorsScreen:
         self._set_entry(self.ent_vendor_id, self._fetch_next_vendor_id())
         self.ent_name.delete(0, tk.END)
         self.ent_phone.delete(0, tk.END)
-        self.ent_national_id.delete(0, tk.END)
         self.combo_group.set("بدون مجموعة")
         self.combo_status.set(self.STATUS_ACTIVE)
         self._set_entry(self.ent_control, VENDOR_CONTROL_ACCOUNT_CODE)
@@ -338,7 +332,6 @@ class VendorsScreen:
         return {
             "vendor_name": name,
             "phone": self.ent_phone.get().strip() or None,
-            "national_id": self.ent_national_id.get().strip() or None,
             "control_account": VENDOR_CONTROL_ACCOUNT_CODE,
             "is_active": self._status_to_bool(self.combo_status.get().strip() or self.STATUS_ACTIVE),
             "group": group_data,
@@ -357,7 +350,6 @@ class VendorsScreen:
             with conn:
                 with conn.cursor() as cur:
                     phone_select = self.phone_col if self.phone_col else "NULL"
-                    nid_select = self.nid_col if self.nid_col else "NULL"
                     control_select = f"COALESCE({self.control_col}, %s)" if self.control_col else "%s"
                     group_id_select = self.group_id_col if self.group_id_col else "NULL"
                     group_name_select = self.group_name_col if self.group_name_col else "NULL"
@@ -365,7 +357,7 @@ class VendorsScreen:
 
                     cur.execute(
                         f"""
-                        SELECT id, vendor_name, {phone_select}, {nid_select}, {control_select}, {group_id_select}, {group_name_select}, {status_select}
+                        SELECT id, vendor_name, {phone_select}, {control_select}, {group_id_select}, {group_name_select}, {status_select}
                         FROM finance.vendors
                         ORDER BY id DESC
                         """,
@@ -374,7 +366,7 @@ class VendorsScreen:
                     rows = cur.fetchall() or []
 
             for idx, row in enumerate(rows):
-                vendor_id, name, phone, nid, _control, group_id, group_name, is_active = row
+                vendor_id, name, phone, _control, group_id, group_name, is_active = row
                 tag = "even" if idx % 2 == 0 else "odd"
                 self.tree.insert(
                     "",
@@ -385,7 +377,6 @@ class VendorsScreen:
                         name or "",
                         self._resolve_group_display(group_id, group_name),
                         phone or "",
-                        nid or "",
                         self._bool_to_status(is_active),
                     ),
                     tags=(tag,),
@@ -418,10 +409,7 @@ class VendorsScreen:
         self.ent_phone.delete(0, tk.END)
         self.ent_phone.insert(0, data[3] or "")
 
-        self.ent_national_id.delete(0, tk.END)
-        self.ent_national_id.insert(0, data[4] or "")
-
-        self.combo_status.set(data[5] or self.STATUS_ACTIVE)
+        self.combo_status.set(data[4] or self.STATUS_ACTIVE)
         self._set_entry(self.ent_control, VENDOR_CONTROL_ACCOUNT_CODE)
 
     def _save(self):
@@ -444,10 +432,6 @@ class VendorsScreen:
                         extra_columns.append(self.phone_col)
                         extra_placeholders.append("%s")
                         values.append(payload["phone"])
-                    if self.nid_col:
-                        extra_columns.append(self.nid_col)
-                        extra_placeholders.append("%s")
-                        values.append(payload["national_id"])
                     if self.control_col:
                         extra_columns.append(self.control_col)
                         extra_placeholders.append("%s")
@@ -504,9 +488,6 @@ class VendorsScreen:
                     if self.phone_col:
                         set_parts.append(f"{self.phone_col} = %s")
                         values.append(payload["phone"])
-                    if self.nid_col:
-                        set_parts.append(f"{self.nid_col} = %s")
-                        values.append(payload["national_id"])
                     if self.control_col:
                         set_parts.append(f"{self.control_col} = %s")
                         values.append(payload["control_account"])

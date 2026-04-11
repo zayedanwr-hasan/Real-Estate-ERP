@@ -3,12 +3,17 @@ from tkinter import messagebox, ttk
 
 import ttkbootstrap as tb
 
-from combobox_helper import bind_searchable_combobox, set_combobox_values
+from app_constants import ACCOUNT_LEVEL_ANALYTICAL
+from combobox_helper import set_combobox_values
 from db_connection import get_connection, get_db_error_message
 
 
 class PropertyScreen:
     STATUS_VALUES = ("متاحة", "محجوزة", "مباعة")
+    PARENT_ACCOUNT_CODE = "1111"
+    PARENT_ACCOUNT_DISPLAY = "1111 - الأراضي والعقارات"
+    DEFAULT_ACCOUNT_TYPE = "أصول"
+    DEFAULT_NATURE = "مدين"
 
     def __init__(self, master):
         self.master = master
@@ -19,8 +24,10 @@ class PropertyScreen:
         self.bg_color = "#f4f7f6"
         self.card_bg = "#3a4b5c"
 
+        self.field_width_chars = 44
         self.properties_columns = set()
-        self.account_display_to_code = {}
+        self.accounts_columns = set()
+        self.ledger_columns = set()
         self.selected_property_id = None
 
         self._setup_styles()
@@ -76,28 +83,35 @@ class PropertyScreen:
         self.frame = tb.Frame(self.master, style="Land.Root.TFrame")
         self.frame.pack(fill=tk.BOTH, expand=True)
         self.frame.grid_columnconfigure(0, weight=1)
-        self.frame.grid_columnconfigure(1, weight=0)
+        self.frame.grid_columnconfigure(1, weight=1)
         self.frame.grid_columnconfigure(2, weight=1)
         self.frame.grid_rowconfigure(0, weight=1)
 
-        self.card = tb.Frame(self.frame, style="Land.Card.TFrame", padding=(18, 16, 18, 16))
-        self.card.grid(row=0, column=1, sticky="n", padx=20, pady=20)
-        self.card.grid_columnconfigure(0, weight=1, minsize=1080)
+        self.card = tb.Frame(self.frame, style="Land.Card.TFrame", padding=(30, 24, 30, 24))
+        self.card.grid(row=0, column=1, sticky="nsew", padx=18, pady=18)
+        self.card.grid_columnconfigure(0, weight=1, minsize=1400)
         self.card.grid_rowconfigure(3, weight=1)
 
-        tb.Label(self.card, text="ترميز الأراضي", style="Land.Title.TLabel", anchor="e").grid(row=0, column=0, sticky="e", pady=(0, 10))
+        tb.Label(self.card, text="ترميز الأراضي", style="Land.Title.TLabel", anchor="e").grid(row=0, column=0, sticky="e", pady=(0, 12))
 
         self.form = tb.Frame(self.card, style="Land.Card.TFrame")
-        self.form.grid(row=1, column=0, sticky="ew")
-        self.form.grid_columnconfigure(0, weight=1)
-        self.form.grid_columnconfigure(2, weight=1)
+        self.form.grid(row=1, column=0, sticky="ew", pady=(0, 4))
+        self.form.grid_columnconfigure(0, weight=1, uniform="formcol")
+        self.form.grid_columnconfigure(2, weight=1, uniform="formcol")
 
         self.ent_name = self._create_labeled_field(self.form, 0, 0, "اسم الأرض", field_type="entry")
         self.ent_price = self._create_labeled_field(self.form, 0, 2, "سعر الشراء", field_type="entry")
         self.ent_location = self._create_labeled_field(self.form, 1, 0, "الموقع", field_type="entry")
         self.cmb_status = self._create_labeled_field(self.form, 1, 2, "الحالة", field_type="combo", values=self.STATUS_VALUES, state="readonly")
-        self.cmb_account = self._create_labeled_field(self.form, 2, 0, "رابط الحساب", field_type="combo", values=(), state="readonly")
-        bind_searchable_combobox(self.cmb_account)
+        self.cmb_account = self._create_labeled_field(
+            self.form,
+            2,
+            0,
+            "رابط الحساب الأب",
+            field_type="combo",
+            values=(self.PARENT_ACCOUNT_DISPLAY,),
+            state="readonly",
+        )
         self.account_code_var = tk.StringVar()
         self.ent_account_code = self._create_labeled_field(
             self.form,
@@ -106,23 +120,28 @@ class PropertyScreen:
             "كود الحساب",
             field_type="entry",
             textvariable=self.account_code_var,
-            state="readonly",
+            state="normal",
         )
 
         self.cmb_status.set(self.STATUS_VALUES[0])
+        self.cmb_account.set(self.PARENT_ACCOUNT_DISPLAY)
         self.cmb_account.bind("<<ComboboxSelected>>", self._on_account_selected)
 
         actions = tb.Frame(self.card, style="Land.Card.TFrame")
-        actions.grid(row=2, column=0, sticky="ew", pady=(8, 12))
+        actions.grid(row=2, column=0, sticky="ew", pady=(10, 14))
         actions.grid_columnconfigure(0, weight=1)
         actions_wrap = tb.Frame(actions, style="Land.Card.TFrame")
         actions_wrap.grid(row=0, column=0)
 
-        tb.Button(actions_wrap, text="جديد", bootstyle="primary", command=self.action_new).grid(row=0, column=0, padx=4)
-        tb.Button(actions_wrap, text="حفظ", bootstyle="success", command=self.action_save).grid(row=0, column=1, padx=4)
-        tb.Button(actions_wrap, text="تعديل", bootstyle="warning", command=self.action_edit).grid(row=0, column=2, padx=4)
-        tb.Button(actions_wrap, text="حذف", bootstyle="danger", command=self.action_delete).grid(row=0, column=3, padx=4)
-        tb.Button(actions_wrap, text="بحث/تحديث", bootstyle="info", command=self.refresh_rows).grid(row=0, column=4, padx=4)
+        button_specs = [
+            ("جديد", "primary", self.action_new),
+            ("حفظ", "success", self.action_save),
+            ("تعديل", "warning", self.action_edit),
+            ("حذف", "danger", self.action_delete),
+            ("تحديث", "info", self.refresh_rows),
+        ]
+        for idx, (label, style_name, command) in enumerate(button_specs):
+            tb.Button(actions_wrap, text=label, bootstyle=style_name, command=command, width=12).grid(row=0, column=idx, padx=7)
 
         table_wrap = tb.Frame(self.card, style="Land.Card.TFrame")
         table_wrap.grid(row=3, column=0, sticky="nsew")
@@ -137,12 +156,12 @@ class PropertyScreen:
         self.tree.heading("location", text="الموقع", anchor="e")
         self.tree.heading("status", text="الحالة", anchor="e")
         self.tree.heading("account_code", text="كود الحساب", anchor="e")
-        self.tree.column("id", width=70, anchor="e")
-        self.tree.column("name", width=240, anchor="e")
-        self.tree.column("price", width=160, anchor="e")
-        self.tree.column("location", width=240, anchor="e")
-        self.tree.column("status", width=120, anchor="e")
-        self.tree.column("account_code", width=140, anchor="e")
+        self.tree.column("id", width=80, anchor="e")
+        self.tree.column("name", width=320, anchor="e")
+        self.tree.column("price", width=190, anchor="e")
+        self.tree.column("location", width=320, anchor="e")
+        self.tree.column("status", width=140, anchor="e")
+        self.tree.column("account_code", width=170, anchor="e")
 
         y_scroll = ttk.Scrollbar(table_wrap, orient="vertical", command=self.tree.yview)
         self.tree.configure(yscrollcommand=y_scroll.set)
@@ -154,10 +173,10 @@ class PropertyScreen:
 
     def _create_labeled_field(self, parent, row, col, label_text, field_type="entry", values=(), state="normal", textvariable=None):
         wrap = tb.Frame(parent, style="Land.Card.TFrame")
-        wrap.grid(row=row, column=col, sticky="ew", padx=10, pady=12)
+        wrap.grid(row=row, column=col, sticky="ew", padx=10, pady=10)
         wrap.grid_columnconfigure(0, weight=1)
 
-        ttk.Label(wrap, text=label_text, style="Land.FieldLabel.TLabel", width=14).grid(row=0, column=1, sticky="e", padx=(0, 8))
+        ttk.Label(wrap, text=label_text, style="Land.FieldLabel.TLabel", width=14).grid(row=0, column=1, sticky="e", padx=(0, 10))
 
         if field_type == "combo":
             widget = ttk.Combobox(
@@ -168,6 +187,7 @@ class PropertyScreen:
                 style="Land.Field.TCombobox",
                 font=("Segoe UI", 11),
                 textvariable=textvariable,
+                width=self.field_width_chars,
             )
             if len(values) > 0:
                 widget.set(values[0])
@@ -178,6 +198,7 @@ class PropertyScreen:
                 justify="right",
                 font=("Segoe UI", 11),
                 textvariable=textvariable,
+                width=self.field_width_chars,
             )
             if state != "normal":
                 widget.configure(state=state)
@@ -189,6 +210,8 @@ class PropertyScreen:
         conn = get_connection()
         if not conn:
             self.properties_columns = set()
+            self.accounts_columns = set()
+            self.ledger_columns = set()
             return
 
         try:
@@ -196,20 +219,28 @@ class PropertyScreen:
                 with conn.cursor() as cur:
                     cur.execute(
                         """
-                        SELECT column_name
+                        SELECT table_name, column_name
                         FROM information_schema.columns
-                        WHERE table_schema = 'finance' AND table_name = 'properties'
+                        WHERE table_schema = 'finance'
+                          AND table_name IN ('properties', 'accounts', 'ledger')
                         """
                     )
-                    self.properties_columns = {row[0] for row in (cur.fetchall() or [])}
+                    rows = cur.fetchall() or []
+
+            self.properties_columns = {col for table, col in rows if table == "properties"}
+            self.accounts_columns = {col for table, col in rows if table == "accounts"}
+            self.ledger_columns = {col for table, col in rows if table == "ledger"}
         except Exception:
             self.properties_columns = set()
+            self.accounts_columns = set()
+            self.ledger_columns = set()
         finally:
             conn.close()
 
     def _bind_enter_navigation(self):
-        order = [self.ent_name, self.ent_price, self.ent_location, self.cmb_status, self.cmb_account]
+        order = [self.ent_name, self.ent_price, self.ent_location, self.cmb_status, self.ent_account_code]
         for idx, widget in enumerate(order):
+
             def go_next(_event, i=idx):
                 if i == len(order) - 1:
                     if self.selected_property_id:
@@ -223,63 +254,52 @@ class PropertyScreen:
             widget.bind("<Return>", go_next)
 
     def _on_account_selected(self, _event=None):
-        display = self.cmb_account.get().strip()
-        self.account_code_var.set(self.account_display_to_code.get(display, ""))
+        if not self.cmb_account.get().strip():
+            self.cmb_account.set(self.PARENT_ACCOUNT_DISPLAY)
 
     def refresh_account_choices(self):
-        conn = get_connection()
-        if not conn:
-            return
-
-        try:
-            with conn:
-                with conn.cursor() as cur:
-                    cur.execute(
-                        """
-                        SELECT account_code, account_name
-                        FROM finance.accounts
-                        WHERE is_active = true
-                          AND account_level = 'تحليلي'
-                          AND (parent_code = '1111' OR account_code LIKE '1111%')
-                        ORDER BY account_code
-                        """
-                    )
-                    rows = cur.fetchall() or []
-
-            displays = []
-            self.account_display_to_code.clear()
-            for code, name in rows:
-                code_text = str(code or "").strip()
-                if not code_text:
-                    continue
-                label = (name or "").strip()
-                display = f"{code_text} - {label}" if label else code_text
-                self.account_display_to_code[display] = code_text
-                displays.append(display)
-
-            set_combobox_values(self.cmb_account, displays)
-            if displays and not self.cmb_account.get().strip():
-                self.cmb_account.set(displays[0])
-                self._on_account_selected()
-        except Exception as exc:
-            messagebox.showerror("خطأ", get_db_error_message(exc, "تعذر تحميل حسابات الأراضي"))
-        finally:
-            conn.close()
+        set_combobox_values(self.cmb_account, [self.PARENT_ACCOUNT_DISPLAY])
+        self.cmb_account.set(self.PARENT_ACCOUNT_DISPLAY)
 
     def _clear_form(self):
         self.ent_name.delete(0, tk.END)
         self.ent_price.delete(0, tk.END)
         self.ent_location.delete(0, tk.END)
         self.cmb_status.set(self.STATUS_VALUES[0])
-        if self.cmb_account.cget("values"):
-            self.cmb_account.set(self.cmb_account.cget("values")[0])
-            self._on_account_selected()
-        else:
-            self.account_code_var.set("")
+        self.cmb_account.set(self.PARENT_ACCOUNT_DISPLAY)
+        self.account_code_var.set("")
+
+    def _get_next_sub_account_code(self):
+        conn = get_connection()
+        if not conn:
+            return f"{self.PARENT_ACCOUNT_CODE}001"
+
+        try:
+            with conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        SELECT COALESCE(MAX(CAST(SUBSTRING(TRIM(account_code) FROM 5) AS BIGINT)), 0)
+                        FROM finance.accounts
+                        WHERE TRIM(account_code) LIKE %s
+                          AND LENGTH(TRIM(account_code)) > 4
+                          AND SUBSTRING(TRIM(account_code) FROM 5) ~ '^[0-9]+$'
+                        """,
+                        (f"{self.PARENT_ACCOUNT_CODE}%",),
+                    )
+                    max_suffix = int((cur.fetchone() or [0])[0] or 0)
+
+            next_suffix = max_suffix + 1
+            return f"{self.PARENT_ACCOUNT_CODE}{next_suffix:03d}"
+        except Exception:
+            return f"{self.PARENT_ACCOUNT_CODE}001"
+        finally:
+            conn.close()
 
     def action_new(self):
         self.selected_property_id = None
         self._clear_form()
+        self.account_code_var.set(self._get_next_sub_account_code())
         self.ent_name.focus_set()
 
     def _parse_form(self):
@@ -295,8 +315,13 @@ class PropertyScreen:
             return None
 
         if not account_code:
-            messagebox.showwarning("تنبيه", "يرجى اختيار رابط الحساب")
-            self.cmb_account.focus_set()
+            messagebox.showwarning("تنبيه", "يرجى إدخال كود الحساب")
+            self.ent_account_code.focus_set()
+            return None
+
+        if not account_code.isdigit() or not account_code.startswith(self.PARENT_ACCOUNT_CODE) or len(account_code) <= len(self.PARENT_ACCOUNT_CODE):
+            messagebox.showwarning("تنبيه", "كود الحساب يجب أن يبدأ بـ 1111 ويكون رقمياً")
+            self.ent_account_code.focus_set()
             return None
 
         if price_text:
@@ -315,6 +340,7 @@ class PropertyScreen:
             "location": location,
             "status": status,
             "account_code": account_code,
+            "parent_code": self.PARENT_ACCOUNT_CODE,
         }
 
     def _name_exists(self, cur, name, ignore_id=None):
@@ -329,6 +355,57 @@ class PropertyScreen:
                 (name,),
             )
         return cur.fetchone() is not None
+
+    def _account_code_exists(self, cur, account_code, ignore_code=None):
+        if ignore_code:
+            cur.execute(
+                "SELECT 1 FROM finance.accounts WHERE TRIM(account_code) = TRIM(%s) AND TRIM(account_code) <> TRIM(%s) LIMIT 1",
+                (account_code, ignore_code),
+            )
+        else:
+            cur.execute(
+                "SELECT 1 FROM finance.accounts WHERE TRIM(account_code) = TRIM(%s) LIMIT 1",
+                (account_code,),
+            )
+        return cur.fetchone() is not None
+
+    def _ledger_has_transactions(self, cur, account_code):
+        if not account_code or "account_code" not in self.ledger_columns:
+            return False
+        cur.execute("SELECT 1 FROM finance.ledger WHERE TRIM(account_code) = TRIM(%s) LIMIT 1", (account_code,))
+        return cur.fetchone() is not None
+
+    def _insert_account_row(self, cur, account_code, account_name):
+        cols = ["account_code", "account_name"]
+        vals = ["%s", "%s"]
+        params = [account_code, account_name]
+
+        if "parent_code" in self.accounts_columns:
+            cols.append("parent_code")
+            vals.append("%s")
+            params.append(self.PARENT_ACCOUNT_CODE)
+        if "account_level" in self.accounts_columns:
+            cols.append("account_level")
+            vals.append("%s")
+            params.append(ACCOUNT_LEVEL_ANALYTICAL)
+        if "account_type" in self.accounts_columns:
+            cols.append("account_type")
+            vals.append("%s")
+            params.append(self.DEFAULT_ACCOUNT_TYPE)
+        if "nature" in self.accounts_columns:
+            cols.append("nature")
+            vals.append("%s")
+            params.append(self.DEFAULT_NATURE)
+        if "is_active" in self.accounts_columns:
+            cols.append("is_active")
+            vals.append("%s")
+            params.append(True)
+
+        # noinspection SqlResolve
+        cur.execute(
+            f"INSERT INTO finance.accounts ({', '.join(cols)}) VALUES ({', '.join(vals)})",
+            tuple(params),
+        )
 
     def action_save(self):
         data = self._parse_form()
@@ -346,6 +423,13 @@ class PropertyScreen:
                         messagebox.showwarning("تنبيه", "اسم الأرض موجود مسبقاً")
                         self.ent_name.focus_set()
                         return
+
+                    if self._account_code_exists(cur, data["account_code"]):
+                        messagebox.showwarning("تنبيه", "كود الحساب مستخدم مسبقاً")
+                        self.ent_account_code.focus_set()
+                        return
+
+                    self._insert_account_row(cur, data["account_code"], data["name"])
 
                     cols = ["property_name"]
                     vals = ["%s"]
@@ -372,12 +456,13 @@ class PropertyScreen:
                         vals.append("%s")
                         params.append(data["account_code"])
 
+                    # noinspection SqlResolve
                     cur.execute(
                         f"INSERT INTO finance.properties ({', '.join(cols)}) VALUES ({', '.join(vals)})",
                         tuple(params),
                     )
 
-            messagebox.showinfo("نجاح", "تم حفظ الأرض بنجاح")
+            messagebox.showinfo("نجاح", "تم حفظ الأرض والحساب المرتبط بنجاح")
             self.refresh_rows()
             self.action_new()
         except Exception as exc:
@@ -406,6 +491,59 @@ class PropertyScreen:
                         self.ent_name.focus_set()
                         return
 
+                    cur.execute(
+                        "SELECT COALESCE(account_code, '') FROM finance.properties WHERE id = %s",
+                        (self.selected_property_id,),
+                    )
+                    row = cur.fetchone()
+                    if not row:
+                        messagebox.showwarning("تنبيه", "السجل المحدد لم يعد موجوداً")
+                        self.refresh_rows()
+                        self.action_new()
+                        return
+
+                    old_account_code = str(row[0] or "").strip()
+                    new_account_code = data["account_code"]
+
+                    if old_account_code and old_account_code != new_account_code:
+                        if self._ledger_has_transactions(cur, old_account_code):
+                            messagebox.showwarning("تنبيه", "لا يمكن تعديل كود الحساب لوجود حركات في دفتر الأستاذ")
+                            self.ent_account_code.focus_set()
+                            return
+                        if self._account_code_exists(cur, new_account_code, ignore_code=old_account_code):
+                            messagebox.showwarning("تنبيه", "كود الحساب الجديد مستخدم مسبقاً")
+                            self.ent_account_code.focus_set()
+                            return
+
+                    if old_account_code:
+                        acc_set_parts = ["account_name = %s"]
+                        acc_params = [data["name"]]
+
+                        if old_account_code != new_account_code:
+                            acc_set_parts.append("account_code = %s")
+                            acc_params.append(new_account_code)
+                        if "parent_code" in self.accounts_columns:
+                            acc_set_parts.append("parent_code = %s")
+                            acc_params.append(self.PARENT_ACCOUNT_CODE)
+                        if "account_level" in self.accounts_columns:
+                            acc_set_parts.append("account_level = %s")
+                            acc_params.append(ACCOUNT_LEVEL_ANALYTICAL)
+
+                        acc_params.append(old_account_code)
+                        cur.execute(
+                            f"UPDATE finance.accounts SET {', '.join(acc_set_parts)} WHERE TRIM(account_code) = TRIM(%s)",
+                            tuple(acc_params),
+                        )
+
+                        if cur.rowcount == 0:
+                            self._insert_account_row(cur, new_account_code, data["name"])
+                    else:
+                        if self._account_code_exists(cur, new_account_code):
+                            messagebox.showwarning("تنبيه", "كود الحساب مستخدم مسبقاً")
+                            self.ent_account_code.focus_set()
+                            return
+                        self._insert_account_row(cur, new_account_code, data["name"])
+
                     set_parts = ["property_name = %s"]
                     params = [data["name"]]
 
@@ -423,7 +561,7 @@ class PropertyScreen:
                         params.append(data["status"])
                     if "account_code" in self.properties_columns:
                         set_parts.append("account_code = %s")
-                        params.append(data["account_code"])
+                        params.append(new_account_code)
 
                     params.append(self.selected_property_id)
                     cur.execute(
@@ -454,7 +592,20 @@ class PropertyScreen:
         try:
             with conn:
                 with conn.cursor() as cur:
+                    cur.execute(
+                        "SELECT COALESCE(account_code, '') FROM finance.properties WHERE id = %s",
+                        (self.selected_property_id,),
+                    )
+                    row = cur.fetchone()
+                    account_code = str((row or [""])[0] or "").strip()
+
+                    if self._ledger_has_transactions(cur, account_code):
+                        messagebox.showwarning("تنبيه", "لا يمكن حذف الأرض لأن الحساب المرتبط عليه حركات محاسبية")
+                        return
+
                     cur.execute("DELETE FROM finance.properties WHERE id = %s", (self.selected_property_id,))
+                    if account_code:
+                        cur.execute("DELETE FROM finance.accounts WHERE TRIM(account_code) = TRIM(%s)", (account_code,))
 
             messagebox.showinfo("نجاح", "تم حذف الأرض")
             self.refresh_rows()
@@ -484,13 +635,8 @@ class PropertyScreen:
         self.ent_location.insert(0, values[3])
 
         self.cmb_status.set(values[4] or self.STATUS_VALUES[0])
-
-        code = str(values[5] or "").strip()
-        self.account_code_var.set(code)
-        for display, display_code in self.account_display_to_code.items():
-            if display_code == code:
-                self.cmb_account.set(display)
-                break
+        self.cmb_account.set(self.PARENT_ACCOUNT_DISPLAY)
+        self.account_code_var.set(str(values[5] or "").strip())
 
     def refresh_rows(self):
         for row_id in self.tree.get_children():

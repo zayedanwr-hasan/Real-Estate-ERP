@@ -9,7 +9,6 @@ from adjustment_journal import SettlementEntryScreen
 from reports_screen import ReportsScreen
 from app_constants import SYSTEM_NAME
 from customers_screen import CustomersScreen
-from vendors_screen import VendorsScreen
 from vendor_groups_screen import VendorGroupsScreen
 from fund_coding_screen import FundCodingScreen
 from settings_screen import SystemSettingsScreen
@@ -324,7 +323,6 @@ class RealEstateApp:
 
         coding_items = [
             ("ترميز العملاء", self.open_customers),
-            ("ترميز الموردين", self.open_vendors),
             ("ترميز مجموعات الموردين", self.open_vendor_groups),
             ("ترميز الصناديق", self.open_funds_coding),
         ]
@@ -457,9 +455,6 @@ class RealEstateApp:
         self.clear_display_area()
         self.current_page = CustomersScreen(self.display_area)
 
-    def open_vendors(self):
-        self.clear_display_area()
-        self.current_page = VendorsScreen(self.display_area)
 
     def open_vendor_groups(self):
         self.clear_display_area()
